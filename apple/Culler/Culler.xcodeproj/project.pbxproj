@@ -7,7 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		08634CB7D567206FCE1E50EB /* BestOfView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF3CE4A87C030BF701059221 /* BestOfView.swift */; };
 		0DC09ECC46A5796B8F5FF4DB /* CullerCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = E2EE1AB00487B05115C8638B /* CullerCore.xcframework */; };
+		0FF35C6EF24879A2487CF41C /* StagingManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A69533BD626EC3524E1A73F /* StagingManagerTests.swift */; };
 		140C23EE30C4504CB96A6090 /* EngineSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC5BD0E6FC6BC0FF5B0B26E7 /* EngineSmokeTests.swift */; };
 		242E324C189FC59FBB3B7DEE /* DupeResolutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 829775A17C2EC7DAE6A0BB8E /* DupeResolutionTests.swift */; };
 		2C14A39B2E504B215F3E118D /* EngineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30483E5EE51550EC5630305 /* EngineStore.swift */; };
@@ -15,11 +17,14 @@
 		4112D93A8E83600EF62A42A7 /* CullerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45BCA2A5B901F27771D6B366 /* CullerApp.swift */; };
 		866E960E0EF1E81F7068D399 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0180C663F66841A779FFB9 /* ContentView.swift */; };
 		93190782606C38A41CF1B905 /* FaceScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF1F9F5BAAA5014FA871D8D3 /* FaceScanner.swift */; };
+		93F5F2FD0A09DFA1059A50C1 /* StagingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA3A78EF08A3A080FDFCFD0C /* StagingManager.swift */; };
 		9F7E5D90B9E9AC31728F8533 /* LibraryGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 717F30A567D5EA3453068EB3 /* LibraryGridView.swift */; };
 		AABB99869E616C2E7C0A7D4B /* DecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB08D1B9734D146E309AF256 /* DecisionTests.swift */; };
 		B82BF0155E18E66104EABD22 /* DupeResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707FF0D900A860F3DEFA79A /* DupeResolution.swift */; };
 		BE1087ABF2D42B54A6349AA0 /* Decision.swift in Sources */ = {isa = PBXBuildFile; fileRef = D023D0AA145623F6463EC756 /* Decision.swift */; };
+		D36776433676CEC22918FFA6 /* CommitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0937630D75206DDB7CE22C92 /* CommitView.swift */; };
 		E18F1B07F44354BD5D420255 /* ClustersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 981450A4A252C866B65FEEF1 /* ClustersView.swift */; };
+		F1B77A9E151F07E0041CBB17 /* TriageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC9B7F7ACCF0F5C9ECA08ED4 /* TriageView.swift */; };
 		F85C025A3C78825A337F7CD0 /* culler_core.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0E15AA5480E563C59015B8A /* culler_core.swift */; };
 /* End PBXBuildFile section */
 
@@ -34,6 +39,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0937630D75206DDB7CE22C92 /* CommitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitView.swift; sourceTree = "<group>"; };
+		0A69533BD626EC3524E1A73F /* StagingManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingManagerTests.swift; sourceTree = "<group>"; };
 		1707FF0D900A860F3DEFA79A /* DupeResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DupeResolution.swift; sourceTree = "<group>"; };
 		45BCA2A5B901F27771D6B366 /* CullerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CullerApp.swift; sourceTree = "<group>"; };
 		4FA7D66A87FB4825958DA481 /* CullerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CullerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -44,12 +51,15 @@
 		9C273089E69F059EC8C21B31 /* Culler.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Culler.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB08D1B9734D146E309AF256 /* DecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionTests.swift; sourceTree = "<group>"; };
 		BC5BD0E6FC6BC0FF5B0B26E7 /* EngineSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineSmokeTests.swift; sourceTree = "<group>"; };
+		BC9B7F7ACCF0F5C9ECA08ED4 /* TriageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriageView.swift; sourceTree = "<group>"; };
+		BF3CE4A87C030BF701059221 /* BestOfView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BestOfView.swift; sourceTree = "<group>"; };
 		CF1F9F5BAAA5014FA871D8D3 /* FaceScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceScanner.swift; sourceTree = "<group>"; };
 		D023D0AA145623F6463EC756 /* Decision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Decision.swift; sourceTree = "<group>"; };
 		DA0180C663F66841A779FFB9 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		E0E15AA5480E563C59015B8A /* culler_core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = culler_core.swift; sourceTree = "<group>"; };
 		E2EE1AB00487B05115C8638B /* CullerCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = CullerCore.xcframework; path = ../CullerCore.xcframework; sourceTree = "<group>"; };
 		E30483E5EE51550EC5630305 /* EngineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineStore.swift; sourceTree = "<group>"; };
+		EA3A78EF08A3A080FDFCFD0C /* StagingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -80,6 +90,7 @@
 				BB08D1B9734D146E309AF256 /* DecisionTests.swift */,
 				829775A17C2EC7DAE6A0BB8E /* DupeResolutionTests.swift */,
 				BC5BD0E6FC6BC0FF5B0B26E7 /* EngineSmokeTests.swift */,
+				0A69533BD626EC3524E1A73F /* StagingManagerTests.swift */,
 			);
 			path = CullerTests;
 			sourceTree = "<group>";
@@ -140,10 +151,13 @@
 		B1C0A8C044A3BEC4E929F41D /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				BF3CE4A87C030BF701059221 /* BestOfView.swift */,
 				981450A4A252C866B65FEEF1 /* ClustersView.swift */,
+				0937630D75206DDB7CE22C92 /* CommitView.swift */,
 				DA0180C663F66841A779FFB9 /* ContentView.swift */,
 				77098BB88C2C820FBD541B49 /* DuplicatesView.swift */,
 				717F30A567D5EA3453068EB3 /* LibraryGridView.swift */,
+				BC9B7F7ACCF0F5C9ECA08ED4 /* TriageView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -152,6 +166,7 @@
 			isa = PBXGroup;
 			children = (
 				E30483E5EE51550EC5630305 /* EngineStore.swift */,
+				EA3A78EF08A3A080FDFCFD0C /* StagingManager.swift */,
 				AD5086E97B513A17F8F9AD9E /* Generated */,
 			);
 			path = Engine;
@@ -250,6 +265,7 @@
 				AABB99869E616C2E7C0A7D4B /* DecisionTests.swift in Sources */,
 				242E324C189FC59FBB3B7DEE /* DupeResolutionTests.swift in Sources */,
 				140C23EE30C4504CB96A6090 /* EngineSmokeTests.swift in Sources */,
+				0FF35C6EF24879A2487CF41C /* StagingManagerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -257,7 +273,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				08634CB7D567206FCE1E50EB /* BestOfView.swift in Sources */,
 				E18F1B07F44354BD5D420255 /* ClustersView.swift in Sources */,
+				D36776433676CEC22918FFA6 /* CommitView.swift in Sources */,
 				866E960E0EF1E81F7068D399 /* ContentView.swift in Sources */,
 				4112D93A8E83600EF62A42A7 /* CullerApp.swift in Sources */,
 				BE1087ABF2D42B54A6349AA0 /* Decision.swift in Sources */,
@@ -266,6 +284,8 @@
 				2C14A39B2E504B215F3E118D /* EngineStore.swift in Sources */,
 				93190782606C38A41CF1B905 /* FaceScanner.swift in Sources */,
 				9F7E5D90B9E9AC31728F8533 /* LibraryGridView.swift in Sources */,
+				93F5F2FD0A09DFA1059A50C1 /* StagingManager.swift in Sources */,
+				F1B77A9E151F07E0041CBB17 /* TriageView.swift in Sources */,
 				F85C025A3C78825A337F7CD0 /* culler_core.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

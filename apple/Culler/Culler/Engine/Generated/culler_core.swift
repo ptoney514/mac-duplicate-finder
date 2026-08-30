@@ -563,6 +563,11 @@ public protocol CullerEngineProtocol: AnyObject, Sendable {
     func attachModels(modelsDir: String) throws 
     
     /**
+     * One best image per gap-based event (§9.5), chronological.
+     */
+    func bestOf(gapSecs: Int64) throws  -> [BestOfEntry]
+    
+    /**
      * Rebuilds burst clusters (PRD §8) and refreshes quality + keepers.
      */
     func clusterBursts(maxGapSecs: Int64, minCosine: Float) throws  -> [NearCluster]
@@ -581,6 +586,11 @@ public protocol CullerEngineProtocol: AnyObject, Sendable {
      * Exact-duplicate groups, largest reclaimable first.
      */
     func dupes() throws  -> [DupeGroup]
+    
+    /**
+     * Live file copies for each content hash (commit flow, §9.7).
+     */
+    func filesForHashes(hashes: [String]) throws  -> [HashFiles]
     
     /**
      * Library grid page: analyzed images, newest capture first.
@@ -691,6 +701,17 @@ open func attachModels(modelsDir: String)throws   {try rustCallWithError(FfiConv
 }
     
     /**
+     * One best image per gap-based event (§9.5), chronological.
+     */
+open func bestOf(gapSecs: Int64)throws  -> [BestOfEntry]  {
+    return try  FfiConverterSequenceTypeBestOfEntry.lift(try rustCallWithError(FfiConverterTypeApiError_lift) {
+    uniffi_culler_core_fn_method_cullerengine_best_of(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(gapSecs),$0
+    )
+})
+}
+    
+    /**
      * Rebuilds burst clusters (PRD §8) and refreshes quality + keepers.
      */
 open func clusterBursts(maxGapSecs: Int64, minCosine: Float)throws  -> [NearCluster]  {
@@ -731,6 +752,17 @@ open func clusters(kind: String?)throws  -> [ClusterDetail]  {
 open func dupes()throws  -> [DupeGroup]  {
     return try  FfiConverterSequenceTypeDupeGroup.lift(try rustCallWithError(FfiConverterTypeApiError_lift) {
     uniffi_culler_core_fn_method_cullerengine_dupes(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * Live file copies for each content hash (commit flow, §9.7).
+     */
+open func filesForHashes(hashes: [String])throws  -> [HashFiles]  {
+    return try  FfiConverterSequenceTypeHashFiles.lift(try rustCallWithError(FfiConverterTypeApiError_lift) {
+    uniffi_culler_core_fn_method_cullerengine_files_for_hashes(self.uniffiClonePointer(),
+        FfiConverterSequenceString.lower(hashes),$0
     )
 })
 }
@@ -1034,6 +1066,92 @@ public func FfiConverterTypeScanProgressListener_lower(_ value: ScanProgressList
 }
 
 
+
+
+public struct BestOfEntry {
+    public var start: Int64
+    public var end: Int64
+    public var count: UInt64
+    public var item: LibraryItem
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(start: Int64, end: Int64, count: UInt64, item: LibraryItem) {
+        self.start = start
+        self.end = end
+        self.count = count
+        self.item = item
+    }
+}
+
+#if compiler(>=6)
+extension BestOfEntry: Sendable {}
+#endif
+
+
+extension BestOfEntry: Equatable, Hashable {
+    public static func ==(lhs: BestOfEntry, rhs: BestOfEntry) -> Bool {
+        if lhs.start != rhs.start {
+            return false
+        }
+        if lhs.end != rhs.end {
+            return false
+        }
+        if lhs.count != rhs.count {
+            return false
+        }
+        if lhs.item != rhs.item {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(start)
+        hasher.combine(end)
+        hasher.combine(count)
+        hasher.combine(item)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeBestOfEntry: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> BestOfEntry {
+        return
+            try BestOfEntry(
+                start: FfiConverterInt64.read(from: &buf), 
+                end: FfiConverterInt64.read(from: &buf), 
+                count: FfiConverterUInt64.read(from: &buf), 
+                item: FfiConverterTypeLibraryItem.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: BestOfEntry, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.start, into: &buf)
+        FfiConverterInt64.write(value.end, into: &buf)
+        FfiConverterUInt64.write(value.count, into: &buf)
+        FfiConverterTypeLibraryItem.write(value.item, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBestOfEntry_lift(_ buf: RustBuffer) throws -> BestOfEntry {
+    return try FfiConverterTypeBestOfEntry.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeBestOfEntry_lower(_ value: BestOfEntry) -> RustBuffer {
+    return FfiConverterTypeBestOfEntry.lower(value)
+}
 
 
 public struct ClusterDetail {
@@ -1546,6 +1664,76 @@ public func FfiConverterTypeFaceTarget_lower(_ value: FaceTarget) -> RustBuffer 
 }
 
 
+public struct HashFiles {
+    public var hashHex: String
+    public var files: [RejectFile]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(hashHex: String, files: [RejectFile]) {
+        self.hashHex = hashHex
+        self.files = files
+    }
+}
+
+#if compiler(>=6)
+extension HashFiles: Sendable {}
+#endif
+
+
+extension HashFiles: Equatable, Hashable {
+    public static func ==(lhs: HashFiles, rhs: HashFiles) -> Bool {
+        if lhs.hashHex != rhs.hashHex {
+            return false
+        }
+        if lhs.files != rhs.files {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(hashHex)
+        hasher.combine(files)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHashFiles: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HashFiles {
+        return
+            try HashFiles(
+                hashHex: FfiConverterString.read(from: &buf), 
+                files: FfiConverterSequenceTypeRejectFile.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HashFiles, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.hashHex, into: &buf)
+        FfiConverterSequenceTypeRejectFile.write(value.files, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHashFiles_lift(_ buf: RustBuffer) throws -> HashFiles {
+    return try FfiConverterTypeHashFiles.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHashFiles_lower(_ value: HashFiles) -> RustBuffer {
+    return FfiConverterTypeHashFiles.lower(value)
+}
+
+
 public struct LibraryItem {
     public var fileId: Int64
     public var path: String
@@ -1553,16 +1741,18 @@ public struct LibraryItem {
     public var capturedAt: Int64?
     public var width: UInt32?
     public var height: UInt32?
+    public var contentHashHex: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(fileId: Int64, path: String, thumbPath: String?, capturedAt: Int64?, width: UInt32?, height: UInt32?) {
+    public init(fileId: Int64, path: String, thumbPath: String?, capturedAt: Int64?, width: UInt32?, height: UInt32?, contentHashHex: String) {
         self.fileId = fileId
         self.path = path
         self.thumbPath = thumbPath
         self.capturedAt = capturedAt
         self.width = width
         self.height = height
+        self.contentHashHex = contentHashHex
     }
 }
 
@@ -1591,6 +1781,9 @@ extension LibraryItem: Equatable, Hashable {
         if lhs.height != rhs.height {
             return false
         }
+        if lhs.contentHashHex != rhs.contentHashHex {
+            return false
+        }
         return true
     }
 
@@ -1601,6 +1794,7 @@ extension LibraryItem: Equatable, Hashable {
         hasher.combine(capturedAt)
         hasher.combine(width)
         hasher.combine(height)
+        hasher.combine(contentHashHex)
     }
 }
 
@@ -1618,7 +1812,8 @@ public struct FfiConverterTypeLibraryItem: FfiConverterRustBuffer {
                 thumbPath: FfiConverterOptionString.read(from: &buf), 
                 capturedAt: FfiConverterOptionInt64.read(from: &buf), 
                 width: FfiConverterOptionUInt32.read(from: &buf), 
-                height: FfiConverterOptionUInt32.read(from: &buf)
+                height: FfiConverterOptionUInt32.read(from: &buf), 
+                contentHashHex: FfiConverterString.read(from: &buf)
         )
     }
 
@@ -1629,6 +1824,7 @@ public struct FfiConverterTypeLibraryItem: FfiConverterRustBuffer {
         FfiConverterOptionInt64.write(value.capturedAt, into: &buf)
         FfiConverterOptionUInt32.write(value.width, into: &buf)
         FfiConverterOptionUInt32.write(value.height, into: &buf)
+        FfiConverterString.write(value.contentHashHex, into: &buf)
     }
 }
 
@@ -1715,6 +1911,76 @@ public func FfiConverterTypeNearCluster_lift(_ buf: RustBuffer) throws -> NearCl
 #endif
 public func FfiConverterTypeNearCluster_lower(_ value: NearCluster) -> RustBuffer {
     return FfiConverterTypeNearCluster.lower(value)
+}
+
+
+public struct RejectFile {
+    public var path: String
+    public var size: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(path: String, size: UInt64) {
+        self.path = path
+        self.size = size
+    }
+}
+
+#if compiler(>=6)
+extension RejectFile: Sendable {}
+#endif
+
+
+extension RejectFile: Equatable, Hashable {
+    public static func ==(lhs: RejectFile, rhs: RejectFile) -> Bool {
+        if lhs.path != rhs.path {
+            return false
+        }
+        if lhs.size != rhs.size {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(path)
+        hasher.combine(size)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeRejectFile: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RejectFile {
+        return
+            try RejectFile(
+                path: FfiConverterString.read(from: &buf), 
+                size: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RejectFile, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterUInt64.write(value.size, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRejectFile_lift(_ buf: RustBuffer) throws -> RejectFile {
+    return try FfiConverterTypeRejectFile.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeRejectFile_lower(_ value: RejectFile) -> RustBuffer {
+    return FfiConverterTypeRejectFile.lower(value)
 }
 
 
@@ -2234,6 +2500,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeBestOfEntry: FfiConverterRustBuffer {
+    typealias SwiftType = [BestOfEntry]
+
+    public static func write(_ value: [BestOfEntry], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeBestOfEntry.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [BestOfEntry] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [BestOfEntry]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeBestOfEntry.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeClusterDetail: FfiConverterRustBuffer {
     typealias SwiftType = [ClusterDetail]
 
@@ -2384,6 +2675,31 @@ fileprivate struct FfiConverterSequenceTypeFaceTarget: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeHashFiles: FfiConverterRustBuffer {
+    typealias SwiftType = [HashFiles]
+
+    public static func write(_ value: [HashFiles], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeHashFiles.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [HashFiles] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [HashFiles]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeHashFiles.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeLibraryItem: FfiConverterRustBuffer {
     typealias SwiftType = [LibraryItem]
 
@@ -2434,6 +2750,31 @@ fileprivate struct FfiConverterSequenceTypeNearCluster: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeRejectFile: FfiConverterRustBuffer {
+    typealias SwiftType = [RejectFile]
+
+    public static func write(_ value: [RejectFile], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeRejectFile.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [RejectFile] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [RejectFile]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeRejectFile.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeSearchResult: FfiConverterRustBuffer {
     typealias SwiftType = [SearchResult]
 
@@ -2474,6 +2815,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_culler_core_checksum_method_cullerengine_attach_models() != 65169) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_culler_core_checksum_method_cullerengine_best_of() != 1058) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_culler_core_checksum_method_cullerengine_cluster_bursts() != 16642) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2484,6 +2828,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_culler_core_checksum_method_cullerengine_dupes() != 58947) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_culler_core_checksum_method_cullerengine_files_for_hashes() != 29721) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_culler_core_checksum_method_cullerengine_grid_items() != 58669) {

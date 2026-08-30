@@ -14,6 +14,8 @@ final class EngineStore {
     private(set) var libraryItems: [LibraryItem] = []
     /// Burst + near clusters for the resolver, largest bursts first.
     private(set) var clusterDetails: [ClusterDetail] = []
+    /// One winner per period for the best-of view.
+    private(set) var bestOfEntries: [BestOfEntry] = []
     /// True once the CLIP models are loaded; semantic search available.
     private(set) var modelsReady = false
     /// Non-nil while a search is active; nil shows the whole library.
@@ -84,6 +86,27 @@ final class EngineStore {
 
     func clearSearch() {
         searchResults = nil
+    }
+
+    func loadBestOf(gapSecs: Int64) async {
+        guard let engine else { return }
+        do {
+            bestOfEntries = try await run { try engine.bestOf(gapSecs: gapSecs) }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Live copies for content hashes (commit flow). Errors surface via
+    /// `errorMessage` and return empty.
+    func filesForHashes(_ hashes: [String]) async -> [HashFiles] {
+        guard let engine, !hashes.isEmpty else { return [] }
+        do {
+            return try await run { try engine.filesForHashes(hashes: hashes) }
+        } catch {
+            errorMessage = error.localizedDescription
+            return []
+        }
     }
 
     /// Vision face pass over images that lack face facts, then a cluster

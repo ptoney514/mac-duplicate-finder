@@ -74,6 +74,7 @@ pub struct LibraryItem {
     pub captured_at: Option<i64>,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    pub content_hash_hex: String,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -106,6 +107,26 @@ pub struct FaceFacts {
     pub file_id: i64,
     pub face_count: u32,
     pub eyes_open_ratio: f64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct BestOfEntry {
+    pub start: i64,
+    pub end: i64,
+    pub count: u64,
+    pub item: LibraryItem,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct RejectFile {
+    pub path: String,
+    pub size: u64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct HashFiles {
+    pub hash_hex: String,
+    pub files: Vec<RejectFile>,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -212,6 +233,37 @@ impl CullerEngine {
             .collect())
     }
 
+    /// One best image per gap-based event (§9.5), chronological.
+    pub fn best_of(&self, gap_secs: i64) -> Result<Vec<BestOfEntry>, ApiError> {
+        Ok(self
+            .lock()
+            .best_of(gap_secs)?
+            .into_iter()
+            .map(|e| BestOfEntry {
+                start: e.start,
+                end: e.end,
+                count: e.count,
+                item: api_item(e.item),
+            })
+            .collect())
+    }
+
+    /// Live file copies for each content hash (commit flow, §9.7).
+    pub fn files_for_hashes(&self, hashes: Vec<String>) -> Result<Vec<HashFiles>, ApiError> {
+        Ok(self
+            .lock()
+            .files_for_hashes(&hashes)?
+            .into_iter()
+            .map(|(hash_hex, files)| HashFiles {
+                hash_hex,
+                files: files
+                    .into_iter()
+                    .map(|(path, size)| RejectFile { path, size })
+                    .collect(),
+            })
+            .collect())
+    }
+
     /// Rebuilds burst clusters (PRD §8) and refreshes quality + keepers.
     pub fn cluster_bursts(
         &self,
@@ -308,14 +360,7 @@ impl CullerEngine {
             .lock()
             .grid_items(offset, limit)?
             .into_iter()
-            .map(|i| LibraryItem {
-                file_id: i.file_id,
-                path: i.path,
-                thumb_path: i.thumb_path,
-                captured_at: i.captured_at,
-                width: i.width,
-                height: i.height,
-            })
+            .map(api_item)
             .collect())
     }
 }
@@ -325,5 +370,17 @@ impl CullerEngine {
         self.inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+fn api_item(i: crate::GridItem) -> LibraryItem {
+    LibraryItem {
+        file_id: i.file_id,
+        path: i.path,
+        thumb_path: i.thumb_path,
+        captured_at: i.captured_at,
+        width: i.width,
+        height: i.height,
+        content_hash_hex: i.content_hash_hex,
     }
 }

@@ -16,6 +16,24 @@ pub struct Db {
     conn: Connection,
 }
 
+const GRID_SELECT: &str = "SELECT f.id, f.path, i.thumb_path, i.captured_at, i.width, \
+     i.height, f.content_hash FROM images i JOIN files f ON f.id = i.file_id";
+
+fn grid_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<crate::GridItem> {
+    let hash: Option<Vec<u8>> = row.get(6)?;
+    Ok(crate::GridItem {
+        file_id: row.get(0)?,
+        path: row.get(1)?,
+        thumb_path: row.get(2)?,
+        captured_at: row.get(3)?,
+        width: row.get::<_, Option<i64>>(4)?.map(|w| w as u32),
+        height: row.get::<_, Option<i64>>(5)?.map(|h| h as u32),
+        content_hash_hex: hash
+            .map(|h| h.iter().map(|b| format!("{b:02x}")).collect())
+            .unwrap_or_default(),
+    })
+}
+
 /// Outcome of recording one walk of a root.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct RecordStats {
@@ -600,22 +618,57 @@ impl Db {
     /// Analyzed live images, newest capture first (NULL `captured_at` last,
     /// path as tiebreak), paginated for the library grid.
     pub fn grid_items(&self, offset: u64, limit: u64) -> Result<Vec<crate::GridItem>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT f.id, f.path, i.thumb_path, i.captured_at, i.width, i.height \
-             FROM images i JOIN files f ON f.id = i.file_id \
-             WHERE f.status != 'missing' \
+        let mut stmt = self.conn.prepare(&format!(
+            "{GRID_SELECT} WHERE f.status != 'missing' \
              ORDER BY i.captured_at IS NULL, i.captured_at DESC, f.path \
-             LIMIT ?1 OFFSET ?2",
+             LIMIT ?1 OFFSET ?2"
+        ))?;
+        let rows = stmt.query_map(params![limit as i64, offset as i64], grid_row)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// One grid item by file id.
+    pub fn grid_item(&self, id: i64) -> Result<Option<crate::GridItem>> {
+        let mut stmt = self
+            .conn
+            .prepare(&format!("{GRID_SELECT} WHERE f.id = ?1"))?;
+        stmt.query_row([id], grid_row)
+            .optional()
+            .map_err(Into::into)
+    }
+
+    /// Live dated images with ranking signals for the best-of view:
+    /// (id, captured_at, quality, aesthetic, sharpness).
+    #[allow(clippy::type_complexity)]
+    pub fn dated_images(&self) -> Result<Vec<(i64, i64, Option<f64>, Option<f64>, Option<f64>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.id, i.captured_at, i.quality_score, i.aesthetic_score, i.sharpness \
+             FROM images i JOIN files f ON f.id = i.file_id \
+             WHERE f.status != 'missing' AND i.captured_at IS NOT NULL \
+             ORDER BY i.captured_at, f.id",
         )?;
-        let rows = stmt.query_map(params![limit as i64, offset as i64], |row| {
-            Ok(crate::GridItem {
-                file_id: row.get(0)?,
-                path: row.get(1)?,
-                thumb_path: row.get(2)?,
-                captured_at: row.get(3)?,
-                width: row.get::<_, Option<i64>>(4)?.map(|w| w as u32),
-                height: row.get::<_, Option<i64>>(5)?.map(|h| h as u32),
-            })
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Live copies (path, size) of one content hash.
+    pub fn files_for_hash(&self, hash: &[u8]) -> Result<Vec<(String, u64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT path, size FROM files \
+             WHERE content_hash = ?1 AND status != 'missing' ORDER BY path",
+        )?;
+        let rows = stmt.query_map([hash], |row| {
+            Ok((row.get(0)?, row.get::<_, i64>(1)? as u64))
         })?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(Into::into)

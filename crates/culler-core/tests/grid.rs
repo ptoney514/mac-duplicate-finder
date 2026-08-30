@@ -49,6 +49,11 @@ fn grid_lists_analyzed_images_newest_first_with_thumbs() {
     for item in &items {
         assert!(item.thumb_path.is_some(), "{item:?}");
         assert!(item.width.is_some() && item.height.is_some());
+        assert_eq!(
+            item.content_hash_hex.len(),
+            64,
+            "triage decisions key off the content hash"
+        );
     }
     assert_eq!(items[0].width, Some(300));
 

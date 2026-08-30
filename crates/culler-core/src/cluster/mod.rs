@@ -3,5 +3,6 @@
 //! (milestones 4-5).
 
 pub mod burst;
+pub mod gap;
 pub mod near;
 pub mod scoring;

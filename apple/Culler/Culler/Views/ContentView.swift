@@ -5,6 +5,9 @@ struct ContentView: View {
         case library
         case duplicates
         case clusters
+        case triage
+        case bestOf
+        case commit
     }
 
     @State private var store = EngineStore()
@@ -23,6 +26,12 @@ struct ContentView: View {
                 Label("Bursts & Similar", systemImage: "square.stack.3d.down.right")
                     .badge(store.clusterDetails.count)
                     .tag(SidebarSection.clusters)
+                Label("Triage", systemImage: "rectangle.stack.badge.play")
+                    .tag(SidebarSection.triage)
+                Label("Best Of", systemImage: "trophy")
+                    .tag(SidebarSection.bestOf)
+                Label("Commit", systemImage: "shippingbox")
+                    .tag(SidebarSection.commit)
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
@@ -48,6 +57,12 @@ struct ContentView: View {
                 DuplicatesView(store: store)
             case .clusters:
                 ClustersView(store: store)
+            case .triage:
+                TriageView(store: store)
+            case .bestOf:
+                BestOfView(store: store)
+            case .commit:
+                CommitView(store: store)
             }
         }
         .navigationTitle("Culler")

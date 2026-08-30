@@ -465,6 +465,69 @@ impl Engine {
         Ok(())
     }
 
+    /// One best image per gap-based event (§9.5), chronological. Undated
+    /// images never appear. Ranking: quality score, then aesthetic, then
+    /// sharpness (later signals cover images outside any cluster).
+    pub fn best_of(&self, gap_secs: i64) -> Result<Vec<BestOfEntry>> {
+        type DatedRow = (i64, i64, Option<f64>, Option<f64>, Option<f64>);
+        let dated = self.db.dated_images()?;
+        let times: Vec<(i64, i64)> = dated.iter().map(|d| (d.0, d.1)).collect();
+        let by_id: HashMap<i64, &DatedRow> = dated.iter().map(|d| (d.0, d)).collect();
+
+        let rank = |id: &i64| {
+            let (_, _, quality, aesthetic, sharpness) = by_id[id];
+            (
+                quality.unwrap_or(f64::NEG_INFINITY),
+                aesthetic.unwrap_or(f64::NEG_INFINITY),
+                sharpness.unwrap_or(f64::NEG_INFINITY),
+            )
+        };
+
+        let mut entries = Vec::new();
+        for group in cluster::gap::gap_groups(&times, gap_secs) {
+            let best = *group
+                .iter()
+                .max_by(|a, b| {
+                    rank(a)
+                        .partial_cmp(&rank(b))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .expect("groups are non-empty");
+            let Some(item) = self.db.grid_item(best)? else {
+                continue;
+            };
+            let start = group.iter().map(|id| by_id[id].1).min().unwrap_or(0);
+            let end = group.iter().map(|id| by_id[id].1).max().unwrap_or(start);
+            entries.push(BestOfEntry {
+                start,
+                end,
+                count: group.len() as u64,
+                item,
+            });
+        }
+        Ok(entries)
+    }
+
+    /// Live file copies (path, size) for each content hash, in input order.
+    /// Backs the commit flow (§9.7). Unknown hashes yield empty lists.
+    #[allow(clippy::type_complexity)]
+    pub fn files_for_hashes(&self, hashes: &[String]) -> Result<Vec<(String, Vec<(String, u64)>)>> {
+        let mut out = Vec::with_capacity(hashes.len());
+        for hex in hashes {
+            let bytes: Vec<u8> = (0..hex.len().saturating_sub(1))
+                .step_by(2)
+                .filter_map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
+                .collect();
+            let files = if bytes.len() == 32 {
+                self.db.files_for_hash(&bytes)?
+            } else {
+                Vec::new()
+            };
+            out.push((hex.clone(), files));
+        }
+        Ok(out)
+    }
+
     /// Overrides the §7 scoring weights used by cluster passes.
     pub fn set_quality_weights(&mut self, weights: cluster::scoring::QualityWeights) {
         self.quality_weights = weights;
@@ -509,4 +572,18 @@ pub struct GridItem {
     pub captured_at: Option<i64>,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    /// BLAKE3 hex; the key for triage decisions (PRD §6).
+    pub content_hash_hex: String,
+}
+
+/// One event's winner for the best-of view (§9.5).
+#[derive(Debug, Clone)]
+pub struct BestOfEntry {
+    /// Event bounds, unix seconds.
+    pub start: i64,
+    pub end: i64,
+    /// Photos in the event.
+    pub count: u64,
+    /// Highest quality (then aesthetic, then sharpness) member.
+    pub item: GridItem,
 }
