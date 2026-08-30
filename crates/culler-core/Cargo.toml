@@ -11,10 +11,14 @@ crate-type = ["lib", "staticlib", "cdylib"]
 blake3 = "1"
 image = "0.25"
 kamadak-exif = "0.6"
+ort = { version = "2.0.0-rc.10", features = ["coreml"] }
 rayon = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 thiserror = "2"
+# Approved addition (PRD §15 ask): exact CLIP BPE via the model's tokenizer.json.
+tokenizers = "0.21"
 uniffi = "0.29"
+usearch = "2"
 walkdir = "2"
 
 [dev-dependencies]

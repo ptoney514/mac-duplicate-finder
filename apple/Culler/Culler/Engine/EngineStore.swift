@@ -12,6 +12,11 @@ final class EngineStore {
     private(set) var lastSummary: ScanSummary?
     private(set) var dupeGroups: [DupeGroup] = []
     private(set) var libraryItems: [LibraryItem] = []
+    /// True once the CLIP models are loaded; semantic search available.
+    private(set) var modelsReady = false
+    /// Non-nil while a search is active; nil shows the whole library.
+    private(set) var searchResults: [SearchResult]?
+    private(set) var isSearching = false
     var errorMessage: String?
 
     /// Same location the CLI defaults to, so both tools share one library.
@@ -22,6 +27,11 @@ final class EngineStore {
 
     nonisolated static var databaseURL: URL {
         supportDirectory.appendingPathComponent("culler.db")
+    }
+
+    /// Installed by scripts/fetch-models.sh.
+    nonisolated static var modelsDirectory: URL {
+        supportDirectory.appendingPathComponent("models", isDirectory: true)
     }
 
     /// Thumbnails are cached by the engine keyed by content hash (PRD §5.1),
@@ -39,6 +49,39 @@ final class EngineStore {
         } catch {
             errorMessage = "Could not open library database: \(error.localizedDescription)"
         }
+        attachModelsIfInstalled()
+    }
+
+    /// Loads the CLIP models off the main actor when they're installed.
+    private func attachModelsIfInstalled() {
+        guard let engine else { return }
+        let dir = Self.modelsDirectory
+        let marker = dir.appendingPathComponent("vision_model.onnx").path
+        guard FileManager.default.fileExists(atPath: marker) else { return }
+        Task {
+            do {
+                try await run { try engine.attachModels(modelsDir: dir.path) }
+                modelsReady = true
+            } catch {
+                errorMessage = "Could not load search models: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func search(_ query: String) async {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard let engine, modelsReady, !trimmed.isEmpty else { return }
+        isSearching = true
+        defer { isSearching = false }
+        do {
+            searchResults = try await run { try engine.search(query: trimmed, limit: 60) }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func clearSearch() {
+        searchResults = nil
     }
 
     func refresh() async {
@@ -95,6 +138,8 @@ final class ProgressRelay: ScanProgressListener {
             handler("Hashing… \(done) of \(total)")
         case .analyzing(let done, let total):
             handler("Analyzing… \(done) of \(total)")
+        case .embedding(let done, let total):
+            handler("Embedding… \(done) of \(total)")
         }
     }
 }

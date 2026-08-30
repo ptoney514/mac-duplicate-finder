@@ -7,13 +7,13 @@
 pub mod analyze;
 pub mod api;
 pub mod cluster;
+pub mod embed;
+pub mod index;
 pub mod scan;
 
 uniffi::setup_scaffolding!();
 
 mod db;
-mod embed;
-mod index;
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -30,6 +30,9 @@ pub enum CoreError {
         #[source]
         source: std::io::Error,
     },
+    /// Embedding model, tokenizer, or vector index problems.
+    #[error("{message}")]
+    Model { message: String },
 }
 
 pub type Result<T> = std::result::Result<T, CoreError>;
@@ -50,6 +53,7 @@ pub enum ScanProgress {
     Walking { found: u64 },
     Hashing { done: u64, total: u64 },
     Analyzing { done: u64, total: u64 },
+    Embedding { done: u64, total: u64 },
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -69,6 +73,8 @@ pub struct ScanSummary {
     pub hashed: u64,
     /// Files analyzed during this scan (EXIF, thumbnail, perceptual hashes).
     pub analyzed: u64,
+    /// Images embedded during this scan (0 unless models are attached).
+    pub embedded: u64,
     /// Files or directories skipped due to I/O errors.
     pub errors: u64,
 }
@@ -90,20 +96,113 @@ pub struct DupeGroup {
     pub reclaimable: u64,
 }
 
+/// One semantic-search hit.
+#[derive(Debug, Clone)]
+pub struct SearchResult {
+    pub file_id: i64,
+    pub path: String,
+    pub thumb_path: Option<String>,
+    /// Cosine similarity in [-1, 1]; higher is better.
+    pub score: f32,
+}
+
 /// Handle to the engine and its database. One per library.
 pub struct Engine {
     db: db::Db,
     /// Thumbnail cache, sibling of the database file.
     thumbs_dir: std::path::PathBuf,
+    /// Vector index file, sibling of the database file.
+    index_path: std::path::PathBuf,
+    embedder: Option<Box<dyn embed::Embedder>>,
+    index: Option<index::VectorIndex>,
 }
 
 impl Engine {
     /// Opens (creating if needed) the database at `db_path` and runs migrations.
     pub fn open(db_path: &Path) -> Result<Self> {
+        let parent = db_path.parent().unwrap_or(Path::new("."));
         Ok(Self {
             db: db::Db::open(db_path)?,
-            thumbs_dir: db_path.parent().unwrap_or(Path::new(".")).join("thumbs"),
+            thumbs_dir: parent.join("thumbs"),
+            index_path: parent.join("culler.usearch"),
+            embedder: None,
+            index: None,
         })
+    }
+
+    /// Attaches an embedder; subsequent scans embed and `search` works.
+    pub fn attach_embedder(&mut self, embedder: Box<dyn embed::Embedder>) {
+        self.embedder = Some(embedder);
+    }
+
+    /// Loads the ONNX CLIP models from `models_dir` and attaches them.
+    pub fn attach_models(&mut self, models_dir: &Path) -> Result<()> {
+        self.attach_embedder(Box::new(embed::onnx::OnnxEmbedder::load(models_dir)?));
+        Ok(())
+    }
+
+    pub fn has_embedder(&self) -> bool {
+        self.embedder.is_some()
+    }
+
+    /// Semantic search: embeds `query` with the CLIP text encoder and ranks
+    /// the library by cosine similarity. Requires attached models.
+    pub fn search(&mut self, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
+        let mut query_vec = {
+            let embedder = self.embedder.as_deref().ok_or_else(|| CoreError::Model {
+                message: "no models attached; run scripts/fetch-models.sh".into(),
+            })?;
+            embedder.embed_text(query)?
+        };
+        embed::normalize(&mut query_vec);
+        self.ensure_index()?;
+
+        // Overfetch so filtering out missing files still fills the page.
+        let index = self.index.as_ref().expect("ensure_index sets it");
+        let hits = index.search(&query_vec, limit.max(1) * 2)?;
+        let mut results = Vec::with_capacity(limit);
+        for (key, score) in hits {
+            if results.len() >= limit {
+                break;
+            }
+            if let Some((path, thumb_path, live)) = self.db.file_meta(key as i64)? {
+                if live {
+                    results.push(SearchResult {
+                        file_id: key as i64,
+                        path,
+                        thumb_path,
+                        score,
+                    });
+                }
+            }
+        }
+        Ok(results)
+    }
+
+    /// Loads (or rebuilds from the embeddings table) the vector index so it
+    /// matches the database. Cheap when already in sync.
+    fn ensure_index(&mut self) -> Result<()> {
+        let count = self.db.embeddings_count()?;
+        if let Some(index) = &self.index {
+            if index.len() as u64 == count {
+                return Ok(());
+            }
+        }
+        if self.index_path.exists() {
+            if let Ok(index) = index::VectorIndex::load(&self.index_path) {
+                if index.len() as u64 == count {
+                    self.index = Some(index);
+                    return Ok(());
+                }
+            }
+        }
+        let mut index = index::VectorIndex::new()?;
+        for (id, vector) in self.db.embedding_rows()? {
+            index.add(id as u64, &vector)?;
+        }
+        index.save(&self.index_path)?;
+        self.index = Some(index);
+        Ok(())
     }
 
     /// Walks `root`, records file facts incrementally, and content-hashes
@@ -235,6 +334,43 @@ impl Engine {
             self.db.store_analysis(&to_store)?;
             done += batch.len() as u64;
             on_progress(ScanProgress::Analyzing { done, total });
+        }
+
+        // Embedding: CLIP vectors from cached thumbnails (ADR-0004), only
+        // when models are attached. New vectors go straight into the index.
+        if self.embedder.is_some() {
+            let targets = self.db.files_needing_embedding()?;
+            let total = targets.len() as u64;
+            if total > 0 {
+                self.ensure_index()?;
+                on_progress(ScanProgress::Embedding { done: 0, total });
+                let mut done = 0u64;
+                for batch in targets.chunks(8) {
+                    let embedder = self.embedder.as_deref().expect("checked above");
+                    let mut rows = Vec::with_capacity(batch.len());
+                    for (id, thumb_path) in batch {
+                        match image::open(thumb_path) {
+                            Ok(img) => match embedder.embed_image(&img) {
+                                Ok(vector) => rows.push((*id, vector)),
+                                Err(_) => summary.errors += 1,
+                            },
+                            Err(_) => summary.errors += 1,
+                        }
+                    }
+                    self.db.store_embeddings(&rows)?;
+                    let index = self.index.as_mut().expect("ensure_index sets it");
+                    for (id, vector) in &rows {
+                        index.add(*id as u64, vector)?;
+                    }
+                    summary.embedded += rows.len() as u64;
+                    done += batch.len() as u64;
+                    on_progress(ScanProgress::Embedding { done, total });
+                }
+                self.index
+                    .as_ref()
+                    .expect("ensure_index sets it")
+                    .save(&self.index_path)?;
+            }
         }
         Ok(summary)
     }

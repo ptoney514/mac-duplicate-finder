@@ -32,6 +32,7 @@ pub struct ScanSummary {
     pub missing: u64,
     pub hashed: u64,
     pub analyzed: u64,
+    pub embedded: u64,
     pub errors: u64,
 }
 
@@ -40,6 +41,7 @@ pub enum ScanProgress {
     Walking { found: u64 },
     Hashing { done: u64, total: u64 },
     Analyzing { done: u64, total: u64 },
+    Embedding { done: u64, total: u64 },
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -72,6 +74,15 @@ pub struct LibraryItem {
     pub captured_at: Option<i64>,
     pub width: Option<u32>,
     pub height: Option<u32>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct SearchResult {
+    pub file_id: i64,
+    pub path: String,
+    pub thumb_path: Option<String>,
+    /// Cosine similarity in [-1, 1]; higher is better.
+    pub score: f32,
 }
 
 /// Swift implements this to receive live scan status (PRD section 5.1).
@@ -112,6 +123,9 @@ impl CullerEngine {
                 crate::ScanProgress::Analyzing { done, total } => {
                     ScanProgress::Analyzing { done, total }
                 }
+                crate::ScanProgress::Embedding { done, total } => {
+                    ScanProgress::Embedding { done, total }
+                }
             });
         })?;
         Ok(ScanSummary {
@@ -122,6 +136,7 @@ impl CullerEngine {
             missing: summary.missing,
             hashed: summary.hashed,
             analyzed: summary.analyzed,
+            embedded: summary.embedded,
             errors: summary.errors,
         })
     }
@@ -161,6 +176,31 @@ impl CullerEngine {
             .map(|c| NearCluster {
                 id: c.id,
                 files: c.files,
+            })
+            .collect())
+    }
+
+    /// Loads the CLIP ONNX models so scans embed and `search` works.
+    pub fn attach_models(&self, models_dir: String) -> Result<(), ApiError> {
+        Ok(self.lock().attach_models(Path::new(&models_dir))?)
+    }
+
+    /// Whether models are attached (search available).
+    pub fn has_models(&self) -> bool {
+        self.lock().has_embedder()
+    }
+
+    /// Semantic search over the library, best match first.
+    pub fn search(&self, query: String, limit: u32) -> Result<Vec<SearchResult>, ApiError> {
+        Ok(self
+            .lock()
+            .search(&query, limit as usize)?
+            .into_iter()
+            .map(|r| SearchResult {
+                file_id: r.file_id,
+                path: r.path,
+                thumb_path: r.thumb_path,
+                score: r.score,
             })
             .collect())
     }

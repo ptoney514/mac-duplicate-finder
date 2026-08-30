@@ -12,13 +12,17 @@ const USAGE: &str = "\
 usage: culler-cli [--db <path>] <command>
 
 commands:
-  scan <path>   walk a folder, record file facts, hash and analyze images
-  dupes         list exact-duplicate groups, largest reclaimable first
-  clusters      rebuild and list near-duplicate clusters
-                  [--kind near] [--dhash <max>] [--phash <max>]
+  scan <path>       walk a folder, record file facts, hash, analyze, and
+                    (when models are installed) embed images
+  dupes             list exact-duplicate groups, largest reclaimable first
+  clusters          rebuild and list near-duplicate clusters
+                      [--kind near] [--dhash <max>] [--phash <max>]
+  search \"<text>\"   semantic search (needs scripts/fetch-models.sh once)
+                      [--limit <n>]
 
 options:
-  --db <path>   database file (default: ~/Library/Application Support/Culler/culler.db)";
+  --db <path>       database file (default: ~/Library/Application Support/Culler/culler.db)
+  --models <path>   CLIP model dir (default: ~/Library/Application Support/Culler/models)";
 
 fn main() -> ExitCode {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -35,10 +39,23 @@ fn main() -> ExitCode {
         Err(msg) => return usage_error(&msg),
     };
 
+    let models_dir = match take_path_flag(&mut args, "--models") {
+        Ok(Some(p)) => p,
+        Ok(None) => EngineStorePaths::default_models(),
+        Err(msg) => return usage_error(&msg),
+    };
+
     let result = match args.first().map(String::as_str) {
         Some("scan") => match args.get(1) {
-            Some(root) if args.len() == 2 => cmd_scan(&db_path, root),
+            Some(root) if args.len() == 2 => cmd_scan(&db_path, &models_dir, root),
             _ => return usage_error("scan takes exactly one path"),
+        },
+        Some("search") => match args.get(1) {
+            Some(query) => match parse_limit(&args[2..]) {
+                Ok(limit) => cmd_search(&db_path, &models_dir, query, limit),
+                Err(msg) => return usage_error(&msg),
+            },
+            None => return usage_error("search takes a quoted query"),
         },
         Some("dupes") if args.len() == 1 => cmd_dupes(&db_path),
         Some("dupes") => return usage_error("dupes takes no arguments"),
@@ -69,13 +86,17 @@ fn usage_error(msg: &str) -> ExitCode {
 }
 
 fn take_db_flag(args: &mut Vec<String>) -> Result<Option<PathBuf>, String> {
-    match args.iter().position(|a| a == "--db") {
+    take_path_flag(args, "--db")
+}
+
+fn take_path_flag(args: &mut Vec<String>, flag: &str) -> Result<Option<PathBuf>, String> {
+    match args.iter().position(|a| a == flag) {
         None => Ok(None),
         Some(i) if i + 1 < args.len() => {
             args.remove(i);
             Ok(Some(PathBuf::from(args.remove(i))))
         }
-        Some(_) => Err("--db needs a path".to_owned()),
+        Some(_) => Err(format!("{flag} needs a path")),
     }
 }
 
@@ -84,14 +105,78 @@ fn default_db_path() -> Option<PathBuf> {
     Some(PathBuf::from(home).join("Library/Application Support/Culler/culler.db"))
 }
 
-fn cmd_scan(db_path: &Path, root: &str) -> Result<(), culler_core::CoreError> {
+/// Default locations shared with the app.
+struct EngineStorePaths;
+impl EngineStorePaths {
+    fn default_models() -> PathBuf {
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default()
+            .join("Library/Application Support/Culler/models")
+    }
+}
+
+/// Attaches CLIP models when installed; quiet no-op otherwise.
+fn attach_models_if_present(engine: &mut Engine, models_dir: &Path) {
+    if models_dir.join("vision_model.onnx").exists() {
+        if let Err(e) = engine.attach_models(models_dir) {
+            eprintln!(
+                "warning: could not load models from {}: {e}",
+                models_dir.display()
+            );
+        }
+    }
+}
+
+fn parse_limit(args: &[String]) -> Result<usize, String> {
+    match args {
+        [] => Ok(12),
+        [flag, value] if flag == "--limit" => value
+            .parse()
+            .map_err(|_| format!("--limit: not a number: {value}")),
+        _ => Err("search accepts only --limit <n>".to_owned()),
+    }
+}
+
+fn cmd_search(
+    db_path: &Path,
+    models_dir: &Path,
+    query: &str,
+    limit: usize,
+) -> Result<(), culler_core::CoreError> {
     let mut engine = Engine::open(db_path)?;
+    attach_models_if_present(&mut engine, models_dir);
+    let started = Instant::now();
+    let hits = engine.search(query, limit)?;
+    let elapsed = started.elapsed();
+
+    if hits.is_empty() {
+        println!("no results for \"{query}\"");
+        return Ok(());
+    }
+    println!(
+        "top {} for \"{query}\" ({} ms)",
+        hits.len(),
+        elapsed.as_millis()
+    );
+    for hit in &hits {
+        println!("  {:>5.3}  {}", hit.score, hit.path);
+    }
+    Ok(())
+}
+
+fn cmd_scan(db_path: &Path, models_dir: &Path, root: &str) -> Result<(), culler_core::CoreError> {
+    let mut engine = Engine::open(db_path)?;
+    attach_models_if_present(&mut engine, models_dir);
     let started = Instant::now();
     let summary = engine.scan(std::path::Path::new(root), &mut |progress| match progress {
         ScanProgress::Walking { found } => eprint!("\r  walking… {found} images found"),
         ScanProgress::Hashing { done, total } => eprint!("\r  hashing… {done}/{total} files"),
         ScanProgress::Analyzing { done, total } => {
             eprint!("\r  analyzing… {done}/{total} images")
+        }
+        ScanProgress::Embedding { done, total } => {
+            eprint!("\r  embedding… {done}/{total} images")
         }
     })?;
     eprint!("\r\x1b[2K");
@@ -102,8 +187,8 @@ fn cmd_scan(db_path: &Path, root: &str) -> Result<(), culler_core::CoreError> {
         summary.found, summary.added, summary.updated, summary.unchanged, summary.missing
     );
     println!(
-        "  hashed {} files, analyzed {} images ({} errors)",
-        summary.hashed, summary.analyzed, summary.errors
+        "  hashed {} files, analyzed {} images, embedded {} ({} errors)",
+        summary.hashed, summary.analyzed, summary.embedded, summary.errors
     );
     Ok(())
 }

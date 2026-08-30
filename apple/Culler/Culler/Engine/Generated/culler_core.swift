@@ -454,6 +454,46 @@ fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
+    typealias FfiType = Float
+    typealias SwiftType = Float
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Float {
+        return try lift(readFloat(&buf))
+    }
+
+    public static func write(_ value: Float, into buf: inout [UInt8]) {
+        writeFloat(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterBool : FfiConverter {
+    typealias FfiType = Int8
+    typealias SwiftType = Bool
+
+    public static func lift(_ value: Int8) throws -> Bool {
+        return value != 0
+    }
+
+    public static func lower(_ value: Bool) -> Int8 {
+        return value ? 1 : 0
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Bool {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Bool, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterString: FfiConverter {
     typealias SwiftType = String
     typealias FfiType = RustBuffer
@@ -502,6 +542,11 @@ fileprivate struct FfiConverterString: FfiConverter {
 public protocol CullerEngineProtocol: AnyObject, Sendable {
     
     /**
+     * Loads the CLIP ONNX models so scans embed and `search` works.
+     */
+    func attachModels(modelsDir: String) throws 
+    
+    /**
      * Rebuilds and returns near-duplicate clusters (no re-analysis).
      */
     func clusterNear(dhashMax: UInt32, phashMax: UInt32) throws  -> [NearCluster]
@@ -517,9 +562,19 @@ public protocol CullerEngineProtocol: AnyObject, Sendable {
     func gridItems(offset: UInt64, limit: UInt64) throws  -> [LibraryItem]
     
     /**
+     * Whether models are attached (search available).
+     */
+    func hasModels()  -> Bool
+    
+    /**
      * Walks, records, hashes, and analyzes `root`. Blocking.
      */
     func scan(root: String, listener: ScanProgressListener) throws  -> ScanSummary
+    
+    /**
+     * Semantic search over the library, best match first.
+     */
+    func search(query: String, limit: UInt32) throws  -> [SearchResult]
     
 }
 /**
@@ -590,6 +645,16 @@ public static func `open`(dbPath: String)throws  -> CullerEngine  {
 
     
     /**
+     * Loads the CLIP ONNX models so scans embed and `search` works.
+     */
+open func attachModels(modelsDir: String)throws   {try rustCallWithError(FfiConverterTypeApiError_lift) {
+    uniffi_culler_core_fn_method_cullerengine_attach_models(self.uniffiClonePointer(),
+        FfiConverterString.lower(modelsDir),$0
+    )
+}
+}
+    
+    /**
      * Rebuilds and returns near-duplicate clusters (no re-analysis).
      */
 open func clusterNear(dhashMax: UInt32, phashMax: UInt32)throws  -> [NearCluster]  {
@@ -624,6 +689,16 @@ open func gridItems(offset: UInt64, limit: UInt64)throws  -> [LibraryItem]  {
 }
     
     /**
+     * Whether models are attached (search available).
+     */
+open func hasModels() -> Bool  {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_culler_core_fn_method_cullerengine_has_models(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
      * Walks, records, hashes, and analyzes `root`. Blocking.
      */
 open func scan(root: String, listener: ScanProgressListener)throws  -> ScanSummary  {
@@ -631,6 +706,18 @@ open func scan(root: String, listener: ScanProgressListener)throws  -> ScanSumma
     uniffi_culler_core_fn_method_cullerengine_scan(self.uniffiClonePointer(),
         FfiConverterString.lower(root),
         FfiConverterTypeScanProgressListener_lower(listener),$0
+    )
+})
+}
+    
+    /**
+     * Semantic search over the library, best match first.
+     */
+open func search(query: String, limit: UInt32)throws  -> [SearchResult]  {
+    return try  FfiConverterSequenceTypeSearchResult.lift(try rustCallWithError(FfiConverterTypeApiError_lift) {
+    uniffi_culler_core_fn_method_cullerengine_search(self.uniffiClonePointer(),
+        FfiConverterString.lower(query),
+        FfiConverterUInt32.lower(limit),$0
     )
 })
 }
@@ -1218,11 +1305,12 @@ public struct ScanSummary {
     public var missing: UInt64
     public var hashed: UInt64
     public var analyzed: UInt64
+    public var embedded: UInt64
     public var errors: UInt64
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(found: UInt64, added: UInt64, updated: UInt64, unchanged: UInt64, missing: UInt64, hashed: UInt64, analyzed: UInt64, errors: UInt64) {
+    public init(found: UInt64, added: UInt64, updated: UInt64, unchanged: UInt64, missing: UInt64, hashed: UInt64, analyzed: UInt64, embedded: UInt64, errors: UInt64) {
         self.found = found
         self.added = added
         self.updated = updated
@@ -1230,6 +1318,7 @@ public struct ScanSummary {
         self.missing = missing
         self.hashed = hashed
         self.analyzed = analyzed
+        self.embedded = embedded
         self.errors = errors
     }
 }
@@ -1262,6 +1351,9 @@ extension ScanSummary: Equatable, Hashable {
         if lhs.analyzed != rhs.analyzed {
             return false
         }
+        if lhs.embedded != rhs.embedded {
+            return false
+        }
         if lhs.errors != rhs.errors {
             return false
         }
@@ -1276,6 +1368,7 @@ extension ScanSummary: Equatable, Hashable {
         hasher.combine(missing)
         hasher.combine(hashed)
         hasher.combine(analyzed)
+        hasher.combine(embedded)
         hasher.combine(errors)
     }
 }
@@ -1296,6 +1389,7 @@ public struct FfiConverterTypeScanSummary: FfiConverterRustBuffer {
                 missing: FfiConverterUInt64.read(from: &buf), 
                 hashed: FfiConverterUInt64.read(from: &buf), 
                 analyzed: FfiConverterUInt64.read(from: &buf), 
+                embedded: FfiConverterUInt64.read(from: &buf), 
                 errors: FfiConverterUInt64.read(from: &buf)
         )
     }
@@ -1308,6 +1402,7 @@ public struct FfiConverterTypeScanSummary: FfiConverterRustBuffer {
         FfiConverterUInt64.write(value.missing, into: &buf)
         FfiConverterUInt64.write(value.hashed, into: &buf)
         FfiConverterUInt64.write(value.analyzed, into: &buf)
+        FfiConverterUInt64.write(value.embedded, into: &buf)
         FfiConverterUInt64.write(value.errors, into: &buf)
     }
 }
@@ -1325,6 +1420,98 @@ public func FfiConverterTypeScanSummary_lift(_ buf: RustBuffer) throws -> ScanSu
 #endif
 public func FfiConverterTypeScanSummary_lower(_ value: ScanSummary) -> RustBuffer {
     return FfiConverterTypeScanSummary.lower(value)
+}
+
+
+public struct SearchResult {
+    public var fileId: Int64
+    public var path: String
+    public var thumbPath: String?
+    /**
+     * Cosine similarity in [-1, 1]; higher is better.
+     */
+    public var score: Float
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(fileId: Int64, path: String, thumbPath: String?, 
+        /**
+         * Cosine similarity in [-1, 1]; higher is better.
+         */score: Float) {
+        self.fileId = fileId
+        self.path = path
+        self.thumbPath = thumbPath
+        self.score = score
+    }
+}
+
+#if compiler(>=6)
+extension SearchResult: Sendable {}
+#endif
+
+
+extension SearchResult: Equatable, Hashable {
+    public static func ==(lhs: SearchResult, rhs: SearchResult) -> Bool {
+        if lhs.fileId != rhs.fileId {
+            return false
+        }
+        if lhs.path != rhs.path {
+            return false
+        }
+        if lhs.thumbPath != rhs.thumbPath {
+            return false
+        }
+        if lhs.score != rhs.score {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(fileId)
+        hasher.combine(path)
+        hasher.combine(thumbPath)
+        hasher.combine(score)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSearchResult: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchResult {
+        return
+            try SearchResult(
+                fileId: FfiConverterInt64.read(from: &buf), 
+                path: FfiConverterString.read(from: &buf), 
+                thumbPath: FfiConverterOptionString.read(from: &buf), 
+                score: FfiConverterFloat.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SearchResult, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.fileId, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterOptionString.write(value.thumbPath, into: &buf)
+        FfiConverterFloat.write(value.score, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchResult_lift(_ buf: RustBuffer) throws -> SearchResult {
+    return try FfiConverterTypeSearchResult.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSearchResult_lower(_ value: SearchResult) -> RustBuffer {
+    return FfiConverterTypeSearchResult.lower(value)
 }
 
 
@@ -1414,6 +1601,8 @@ public enum ScanProgress {
     )
     case analyzing(done: UInt64, total: UInt64
     )
+    case embedding(done: UInt64, total: UInt64
+    )
 }
 
 
@@ -1440,6 +1629,9 @@ public struct FfiConverterTypeScanProgress: FfiConverterRustBuffer {
         case 3: return .analyzing(done: try FfiConverterUInt64.read(from: &buf), total: try FfiConverterUInt64.read(from: &buf)
         )
         
+        case 4: return .embedding(done: try FfiConverterUInt64.read(from: &buf), total: try FfiConverterUInt64.read(from: &buf)
+        )
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
@@ -1461,6 +1653,12 @@ public struct FfiConverterTypeScanProgress: FfiConverterRustBuffer {
         
         case let .analyzing(done,total):
             writeInt(&buf, Int32(3))
+            FfiConverterUInt64.write(done, into: &buf)
+            FfiConverterUInt64.write(total, into: &buf)
+            
+        
+        case let .embedding(done,total):
+            writeInt(&buf, Int32(4))
             FfiConverterUInt64.write(done, into: &buf)
             FfiConverterUInt64.write(total, into: &buf)
             
@@ -1688,6 +1886,31 @@ fileprivate struct FfiConverterSequenceTypeNearCluster: FfiConverterRustBuffer {
     }
 }
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeSearchResult: FfiConverterRustBuffer {
+    typealias SwiftType = [SearchResult]
+
+    public static func write(_ value: [SearchResult], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSearchResult.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SearchResult] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SearchResult]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSearchResult.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 private enum InitializationResult {
     case ok
     case contractVersionMismatch
@@ -1703,6 +1926,9 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_culler_core_checksum_method_cullerengine_attach_models() != 65169) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_culler_core_checksum_method_cullerengine_cluster_near() != 45540) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -1712,7 +1938,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_culler_core_checksum_method_cullerengine_grid_items() != 58669) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_culler_core_checksum_method_cullerengine_has_models() != 44842) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_culler_core_checksum_method_cullerengine_scan() != 11666) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_culler_core_checksum_method_cullerengine_search() != 2511) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_culler_core_checksum_method_scanprogresslistener_on_progress() != 30572) {

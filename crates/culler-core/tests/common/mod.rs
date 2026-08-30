@@ -130,6 +130,48 @@ pub fn images_row(dir: &Path, path: &Path) -> Option<ImagesRow> {
     .ok()
 }
 
+/// Test stand-in for the CLIP embedder: maps an image to its average color
+/// on the first three axes, and the words "red"/"green"/"blue" to the
+/// matching axis. Lets search tests run without ONNX models.
+pub struct StubEmbedder;
+
+impl culler_core::embed::Embedder for StubEmbedder {
+    fn embed_image(&self, img: &image::DynamicImage) -> culler_core::Result<Vec<f32>> {
+        let rgb = img.to_rgb8();
+        let n = (rgb.width() * rgb.height()) as f32;
+        let mut v = vec![0.0f32; culler_core::embed::EMBED_DIM];
+        for p in rgb.pixels() {
+            v[0] += p[0] as f32 / 255.0 / n;
+            v[1] += p[1] as f32 / 255.0 / n;
+            v[2] += p[2] as f32 / 255.0 / n;
+        }
+        culler_core::embed::normalize(&mut v);
+        Ok(v)
+    }
+
+    fn embed_text(&self, text: &str) -> culler_core::Result<Vec<f32>> {
+        let mut v = vec![0.0f32; culler_core::embed::EMBED_DIM];
+        match text {
+            "red" => v[0] = 1.0,
+            "green" => v[1] = 1.0,
+            "blue" => v[2] = 1.0,
+            _ => v[3] = 1.0,
+        }
+        Ok(v)
+    }
+}
+
+/// Solid-color image in memory.
+pub fn test_solid(r: u8, g: u8, b: u8) -> DynamicImage {
+    DynamicImage::ImageRgb8(RgbImage::from_pixel(64, 64, image::Rgb([r, g, b])))
+}
+
+/// Solid-color JPEG (survives thumbnailing unchanged in hue).
+pub fn solid_jpeg(dir: &Path, name: &str, rgb: [u8; 3], side: u32) -> PathBuf {
+    let img = DynamicImage::ImageRgb8(RgbImage::from_pixel(side, side, image::Rgb(rgb)));
+    save_jpeg(&img, dir, name)
+}
+
 /// Structured synthetic photo: gradient plus a soft disc, so perceptual
 /// hashes are stable and orientation of the gradient distinguishes images.
 pub fn test_image(w: u32, h: u32, horizontal: bool) -> DynamicImage {

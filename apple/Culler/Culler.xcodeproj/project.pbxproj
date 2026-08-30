@@ -350,6 +350,9 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				OTHER_LDFLAGS = (
+					"-lc++",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.pernell.culler;
 				PRODUCT_NAME = Culler;
 				SDKROOT = macosx;
@@ -388,6 +391,9 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
+				);
+				OTHER_LDFLAGS = (
+					"-lc++",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.pernell.culler;
 				PRODUCT_NAME = Culler;

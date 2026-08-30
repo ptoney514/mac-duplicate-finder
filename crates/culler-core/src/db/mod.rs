@@ -321,6 +321,79 @@ impl Db {
         Ok(out)
     }
 
+    /// Live analyzed images with a thumbnail but no stored embedding yet.
+    /// Thumbnails are the embedding source (ADR-0004).
+    pub fn files_needing_embedding(&self) -> Result<Vec<(i64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.id, i.thumb_path FROM images i \
+             JOIN files f ON f.id = i.file_id \
+             LEFT JOIN embeddings e ON e.file_id = f.id \
+             WHERE f.status != 'missing' AND i.thumb_path IS NOT NULL \
+               AND e.file_id IS NULL \
+             ORDER BY f.id",
+        )?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Stores 512-dim f32 vectors as little-endian blobs (PRD §6).
+    pub fn store_embeddings(&mut self, rows: &[(i64, Vec<f32>)]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut stmt =
+                tx.prepare("INSERT OR REPLACE INTO embeddings (file_id, vector) VALUES (?1, ?2)")?;
+            for (id, vector) in rows {
+                let blob: Vec<u8> = vector.iter().flat_map(|f| f.to_le_bytes()).collect();
+                stmt.execute(params![id, blob])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn embeddings_count(&self) -> Result<u64> {
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM embeddings", [], |row| row.get(0))?;
+        Ok(count as u64)
+    }
+
+    /// Every stored embedding, decoded. Used to rebuild the vector index.
+    pub fn embedding_rows(&self) -> Result<Vec<(i64, Vec<f32>)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT file_id, vector FROM embeddings ORDER BY file_id")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, blob) = row?;
+            let vector = blob
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                .collect();
+            out.push((id, vector));
+        }
+        Ok(out)
+    }
+
+    /// Path, thumbnail, and liveness for one file id (search result lookup).
+    pub fn file_meta(&self, id: i64) -> Result<Option<(String, Option<String>, bool)>> {
+        self.conn
+            .query_row(
+                "SELECT f.path, i.thumb_path, f.status != 'missing' FROM files f \
+                 LEFT JOIN images i ON i.file_id = f.id WHERE f.id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
     /// Analyzed live images, newest capture first (NULL `captured_at` last,
     /// path as tiebreak), paginated for the library grid.
     pub fn grid_items(&self, offset: u64, limit: u64) -> Result<Vec<crate::GridItem>> {

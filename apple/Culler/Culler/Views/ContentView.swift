@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var store = EngineStore()
     @State private var selection: SidebarSection = .library
     @State private var showingFolderPicker = false
+    @State private var searchText = ""
 
     var body: some View {
         NavigationSplitView {
@@ -24,6 +25,21 @@ struct ContentView: View {
             switch selection {
             case .library:
                 LibraryGridView(store: store)
+                    .searchable(
+                        text: $searchText,
+                        placement: .toolbar,
+                        prompt: store.modelsReady
+                            ? "Search your photos"
+                            : "Search (run fetch-models.sh first)"
+                    )
+                    .onSubmit(of: .search) {
+                        Task { await store.search(searchText) }
+                    }
+                    .onChange(of: searchText) {
+                        if searchText.isEmpty {
+                            store.clearSearch()
+                        }
+                    }
             case .duplicates:
                 DuplicatesView(store: store)
             }

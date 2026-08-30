@@ -11,7 +11,9 @@ struct LibraryGridView: View {
 
     var body: some View {
         Group {
-            if store.libraryItems.isEmpty {
+            if let results = store.searchResults {
+                searchGrid(results)
+            } else if store.libraryItems.isEmpty {
                 ContentUnavailableView(
                     "No Images Yet",
                     systemImage: "photo.on.rectangle.angled",
@@ -29,7 +31,40 @@ struct LibraryGridView: View {
                 }
             }
         }
-        .navigationSubtitle("\(store.libraryItems.count) images")
+        .navigationSubtitle(subtitle)
+    }
+
+    private var subtitle: String {
+        if let results = store.searchResults {
+            "\(results.count) search results"
+        } else {
+            "\(store.libraryItems.count) images"
+        }
+    }
+
+    @ViewBuilder
+    private func searchGrid(_ results: [SearchResult]) -> some View {
+        if results.isEmpty {
+            ContentUnavailableView.search
+        } else {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 8) {
+                    ForEach(results, id: \.fileId) { hit in
+                        ThumbCell(path: hit.thumbPath)
+                            .overlay(alignment: .bottomTrailing) {
+                                Text(String(format: "%.2f", hit.score))
+                                    .font(.caption2.monospacedDigit())
+                                    .padding(3)
+                                    .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 4))
+                                    .foregroundStyle(.white)
+                                    .padding(4)
+                            }
+                            .help(hit.path)
+                    }
+                }
+                .padding()
+            }
+        }
     }
 }
 

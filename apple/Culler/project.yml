@@ -27,6 +27,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.pernell.culler
         PRODUCT_NAME: Culler
+        # culler-core bundles C++ (usearch, onnxruntime helpers).
+        OTHER_LDFLAGS: ["-lc++"]
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.photography
         INFOPLIST_KEY_NSMainStoryboardFile: ""

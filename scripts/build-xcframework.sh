@@ -16,7 +16,9 @@ export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 # trigger "built for newer macOS" linker warnings in Xcode.
 export MACOSX_DEPLOYMENT_TARGET=14.0
 
-TARGETS=(aarch64-apple-darwin x86_64-apple-darwin)
+# arm64-only since milestone 4: onnxruntime ships no macOS x86_64 prebuilts
+# (ADR-0005). Re-add x86_64-apple-darwin here if Intel support returns.
+TARGETS=(aarch64-apple-darwin)
 STAGE=target/xcframework
 rm -rf "$STAGE"
 mkdir -p "$STAGE/headers"
@@ -34,10 +36,9 @@ cargo run -q -p uniffi-bindgen -- generate \
 cp "$STAGE/bindings/culler_coreFFI.h" "$STAGE/headers/"
 cp "$STAGE/bindings/culler_coreFFI.modulemap" "$STAGE/headers/module.modulemap"
 
-echo "creating universal static library"
+echo "creating static library"
 lipo -create \
   target/aarch64-apple-darwin/release/libculler_core.a \
-  target/x86_64-apple-darwin/release/libculler_core.a \
   -output "$STAGE/libculler_core.a"
 
 rm -rf apple/CullerCore.xcframework
