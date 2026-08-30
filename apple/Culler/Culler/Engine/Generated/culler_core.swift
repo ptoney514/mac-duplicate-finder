@@ -470,6 +470,22 @@ fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
+    typealias FfiType = Double
+    typealias SwiftType = Double
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Double {
+        return try lift(readDouble(&buf))
+    }
+
+    public static func write(_ value: Double, into buf: inout [UInt8]) {
+        writeDouble(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool : FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -547,9 +563,19 @@ public protocol CullerEngineProtocol: AnyObject, Sendable {
     func attachModels(modelsDir: String) throws 
     
     /**
+     * Rebuilds burst clusters (PRD §8) and refreshes quality + keepers.
+     */
+    func clusterBursts(maxGapSecs: Int64, minCosine: Float) throws  -> [NearCluster]
+    
+    /**
      * Rebuilds and returns near-duplicate clusters (no re-analysis).
      */
     func clusterNear(dhashMax: UInt32, phashMax: UInt32) throws  -> [NearCluster]
+    
+    /**
+     * Stored clusters with member metadata; `kind` filters (near/burst).
+     */
+    func clusters(kind: String?) throws  -> [ClusterDetail]
     
     /**
      * Exact-duplicate groups, largest reclaimable first.
@@ -567,6 +593,11 @@ public protocol CullerEngineProtocol: AnyObject, Sendable {
     func hasModels()  -> Bool
     
     /**
+     * Analyzed images the Vision face pass hasn't visited yet.
+     */
+    func imagesNeedingFaces() throws  -> [FaceTarget]
+    
+    /**
      * Walks, records, hashes, and analyzes `root`. Blocking.
      */
     func scan(root: String, listener: ScanProgressListener) throws  -> ScanSummary
@@ -575,6 +606,11 @@ public protocol CullerEngineProtocol: AnyObject, Sendable {
      * Semantic search over the library, best match first.
      */
     func search(query: String, limit: UInt32) throws  -> [SearchResult]
+    
+    /**
+     * Stores Apple Vision face facts and refreshes quality + keepers.
+     */
+    func storeFaceFacts(facts: [FaceFacts]) throws 
     
 }
 /**
@@ -655,6 +691,18 @@ open func attachModels(modelsDir: String)throws   {try rustCallWithError(FfiConv
 }
     
     /**
+     * Rebuilds burst clusters (PRD §8) and refreshes quality + keepers.
+     */
+open func clusterBursts(maxGapSecs: Int64, minCosine: Float)throws  -> [NearCluster]  {
+    return try  FfiConverterSequenceTypeNearCluster.lift(try rustCallWithError(FfiConverterTypeApiError_lift) {
+    uniffi_culler_core_fn_method_cullerengine_cluster_bursts(self.uniffiClonePointer(),
+        FfiConverterInt64.lower(maxGapSecs),
+        FfiConverterFloat.lower(minCosine),$0
+    )
+})
+}
+    
+    /**
      * Rebuilds and returns near-duplicate clusters (no re-analysis).
      */
 open func clusterNear(dhashMax: UInt32, phashMax: UInt32)throws  -> [NearCluster]  {
@@ -662,6 +710,17 @@ open func clusterNear(dhashMax: UInt32, phashMax: UInt32)throws  -> [NearCluster
     uniffi_culler_core_fn_method_cullerengine_cluster_near(self.uniffiClonePointer(),
         FfiConverterUInt32.lower(dhashMax),
         FfiConverterUInt32.lower(phashMax),$0
+    )
+})
+}
+    
+    /**
+     * Stored clusters with member metadata; `kind` filters (near/burst).
+     */
+open func clusters(kind: String?)throws  -> [ClusterDetail]  {
+    return try  FfiConverterSequenceTypeClusterDetail.lift(try rustCallWithError(FfiConverterTypeApiError_lift) {
+    uniffi_culler_core_fn_method_cullerengine_clusters(self.uniffiClonePointer(),
+        FfiConverterOptionString.lower(kind),$0
     )
 })
 }
@@ -699,6 +758,16 @@ open func hasModels() -> Bool  {
 }
     
     /**
+     * Analyzed images the Vision face pass hasn't visited yet.
+     */
+open func imagesNeedingFaces()throws  -> [FaceTarget]  {
+    return try  FfiConverterSequenceTypeFaceTarget.lift(try rustCallWithError(FfiConverterTypeApiError_lift) {
+    uniffi_culler_core_fn_method_cullerengine_images_needing_faces(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
      * Walks, records, hashes, and analyzes `root`. Blocking.
      */
 open func scan(root: String, listener: ScanProgressListener)throws  -> ScanSummary  {
@@ -720,6 +789,16 @@ open func search(query: String, limit: UInt32)throws  -> [SearchResult]  {
         FfiConverterUInt32.lower(limit),$0
     )
 })
+}
+    
+    /**
+     * Stores Apple Vision face facts and refreshes quality + keepers.
+     */
+open func storeFaceFacts(facts: [FaceFacts])throws   {try rustCallWithError(FfiConverterTypeApiError_lift) {
+    uniffi_culler_core_fn_method_cullerengine_store_face_facts(self.uniffiClonePointer(),
+        FfiConverterSequenceTypeFaceFacts.lower(facts),$0
+    )
+}
 }
     
 
@@ -957,6 +1036,200 @@ public func FfiConverterTypeScanProgressListener_lower(_ value: ScanProgressList
 
 
 
+public struct ClusterDetail {
+    public var id: Int64
+    public var kind: String
+    public var keeperFileId: Int64?
+    /**
+     * Filmstrip order: capture time ascending, then id.
+     */
+    public var members: [ClusterMember]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, kind: String, keeperFileId: Int64?, 
+        /**
+         * Filmstrip order: capture time ascending, then id.
+         */members: [ClusterMember]) {
+        self.id = id
+        self.kind = kind
+        self.keeperFileId = keeperFileId
+        self.members = members
+    }
+}
+
+#if compiler(>=6)
+extension ClusterDetail: Sendable {}
+#endif
+
+
+extension ClusterDetail: Equatable, Hashable {
+    public static func ==(lhs: ClusterDetail, rhs: ClusterDetail) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.keeperFileId != rhs.keeperFileId {
+            return false
+        }
+        if lhs.members != rhs.members {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(kind)
+        hasher.combine(keeperFileId)
+        hasher.combine(members)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeClusterDetail: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ClusterDetail {
+        return
+            try ClusterDetail(
+                id: FfiConverterInt64.read(from: &buf), 
+                kind: FfiConverterString.read(from: &buf), 
+                keeperFileId: FfiConverterOptionInt64.read(from: &buf), 
+                members: FfiConverterSequenceTypeClusterMember.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ClusterDetail, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterString.write(value.kind, into: &buf)
+        FfiConverterOptionInt64.write(value.keeperFileId, into: &buf)
+        FfiConverterSequenceTypeClusterMember.write(value.members, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeClusterDetail_lift(_ buf: RustBuffer) throws -> ClusterDetail {
+    return try FfiConverterTypeClusterDetail.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeClusterDetail_lower(_ value: ClusterDetail) -> RustBuffer {
+    return FfiConverterTypeClusterDetail.lower(value)
+}
+
+
+public struct ClusterMember {
+    public var fileId: Int64
+    public var path: String
+    public var thumbPath: String?
+    public var qualityScore: Double?
+    public var contentHashHex: String
+    public var capturedAt: Int64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(fileId: Int64, path: String, thumbPath: String?, qualityScore: Double?, contentHashHex: String, capturedAt: Int64?) {
+        self.fileId = fileId
+        self.path = path
+        self.thumbPath = thumbPath
+        self.qualityScore = qualityScore
+        self.contentHashHex = contentHashHex
+        self.capturedAt = capturedAt
+    }
+}
+
+#if compiler(>=6)
+extension ClusterMember: Sendable {}
+#endif
+
+
+extension ClusterMember: Equatable, Hashable {
+    public static func ==(lhs: ClusterMember, rhs: ClusterMember) -> Bool {
+        if lhs.fileId != rhs.fileId {
+            return false
+        }
+        if lhs.path != rhs.path {
+            return false
+        }
+        if lhs.thumbPath != rhs.thumbPath {
+            return false
+        }
+        if lhs.qualityScore != rhs.qualityScore {
+            return false
+        }
+        if lhs.contentHashHex != rhs.contentHashHex {
+            return false
+        }
+        if lhs.capturedAt != rhs.capturedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(fileId)
+        hasher.combine(path)
+        hasher.combine(thumbPath)
+        hasher.combine(qualityScore)
+        hasher.combine(contentHashHex)
+        hasher.combine(capturedAt)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeClusterMember: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ClusterMember {
+        return
+            try ClusterMember(
+                fileId: FfiConverterInt64.read(from: &buf), 
+                path: FfiConverterString.read(from: &buf), 
+                thumbPath: FfiConverterOptionString.read(from: &buf), 
+                qualityScore: FfiConverterOptionDouble.read(from: &buf), 
+                contentHashHex: FfiConverterString.read(from: &buf), 
+                capturedAt: FfiConverterOptionInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ClusterMember, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.fileId, into: &buf)
+        FfiConverterString.write(value.path, into: &buf)
+        FfiConverterOptionString.write(value.thumbPath, into: &buf)
+        FfiConverterOptionDouble.write(value.qualityScore, into: &buf)
+        FfiConverterString.write(value.contentHashHex, into: &buf)
+        FfiConverterOptionInt64.write(value.capturedAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeClusterMember_lift(_ buf: RustBuffer) throws -> ClusterMember {
+    return try FfiConverterTypeClusterMember.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeClusterMember_lower(_ value: ClusterMember) -> RustBuffer {
+    return FfiConverterTypeClusterMember.lower(value)
+}
+
+
 public struct DupeFile {
     public var path: String
     public var mtime: Int64
@@ -1122,6 +1395,154 @@ public func FfiConverterTypeDupeGroup_lift(_ buf: RustBuffer) throws -> DupeGrou
 #endif
 public func FfiConverterTypeDupeGroup_lower(_ value: DupeGroup) -> RustBuffer {
     return FfiConverterTypeDupeGroup.lower(value)
+}
+
+
+public struct FaceFacts {
+    public var fileId: Int64
+    public var faceCount: UInt32
+    public var eyesOpenRatio: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(fileId: Int64, faceCount: UInt32, eyesOpenRatio: Double) {
+        self.fileId = fileId
+        self.faceCount = faceCount
+        self.eyesOpenRatio = eyesOpenRatio
+    }
+}
+
+#if compiler(>=6)
+extension FaceFacts: Sendable {}
+#endif
+
+
+extension FaceFacts: Equatable, Hashable {
+    public static func ==(lhs: FaceFacts, rhs: FaceFacts) -> Bool {
+        if lhs.fileId != rhs.fileId {
+            return false
+        }
+        if lhs.faceCount != rhs.faceCount {
+            return false
+        }
+        if lhs.eyesOpenRatio != rhs.eyesOpenRatio {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(fileId)
+        hasher.combine(faceCount)
+        hasher.combine(eyesOpenRatio)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFaceFacts: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceFacts {
+        return
+            try FaceFacts(
+                fileId: FfiConverterInt64.read(from: &buf), 
+                faceCount: FfiConverterUInt32.read(from: &buf), 
+                eyesOpenRatio: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FaceFacts, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.fileId, into: &buf)
+        FfiConverterUInt32.write(value.faceCount, into: &buf)
+        FfiConverterDouble.write(value.eyesOpenRatio, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceFacts_lift(_ buf: RustBuffer) throws -> FaceFacts {
+    return try FfiConverterTypeFaceFacts.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceFacts_lower(_ value: FaceFacts) -> RustBuffer {
+    return FfiConverterTypeFaceFacts.lower(value)
+}
+
+
+public struct FaceTarget {
+    public var fileId: Int64
+    public var thumbPath: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(fileId: Int64, thumbPath: String) {
+        self.fileId = fileId
+        self.thumbPath = thumbPath
+    }
+}
+
+#if compiler(>=6)
+extension FaceTarget: Sendable {}
+#endif
+
+
+extension FaceTarget: Equatable, Hashable {
+    public static func ==(lhs: FaceTarget, rhs: FaceTarget) -> Bool {
+        if lhs.fileId != rhs.fileId {
+            return false
+        }
+        if lhs.thumbPath != rhs.thumbPath {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(fileId)
+        hasher.combine(thumbPath)
+    }
+}
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeFaceTarget: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> FaceTarget {
+        return
+            try FaceTarget(
+                fileId: FfiConverterInt64.read(from: &buf), 
+                thumbPath: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: FaceTarget, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.fileId, into: &buf)
+        FfiConverterString.write(value.thumbPath, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceTarget_lift(_ buf: RustBuffer) throws -> FaceTarget {
+    return try FfiConverterTypeFaceTarget.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeFaceTarget_lower(_ value: FaceTarget) -> RustBuffer {
+    return FfiConverterTypeFaceTarget.lower(value)
 }
 
 
@@ -1740,6 +2161,30 @@ fileprivate struct FfiConverterOptionInt64: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionDouble: FfiConverterRustBuffer {
+    typealias SwiftType = Double?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterDouble.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterDouble.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
     typealias SwiftType = String?
 
@@ -1781,6 +2226,56 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeClusterDetail: FfiConverterRustBuffer {
+    typealias SwiftType = [ClusterDetail]
+
+    public static func write(_ value: [ClusterDetail], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeClusterDetail.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ClusterDetail] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ClusterDetail]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeClusterDetail.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeClusterMember: FfiConverterRustBuffer {
+    typealias SwiftType = [ClusterMember]
+
+    public static func write(_ value: [ClusterMember], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeClusterMember.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ClusterMember] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ClusterMember]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeClusterMember.read(from: &buf))
         }
         return seq
     }
@@ -1831,6 +2326,56 @@ fileprivate struct FfiConverterSequenceTypeDupeGroup: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeDupeGroup.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeFaceFacts: FfiConverterRustBuffer {
+    typealias SwiftType = [FaceFacts]
+
+    public static func write(_ value: [FaceFacts], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFaceFacts.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FaceFacts] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FaceFacts]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFaceFacts.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeFaceTarget: FfiConverterRustBuffer {
+    typealias SwiftType = [FaceTarget]
+
+    public static func write(_ value: [FaceTarget], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeFaceTarget.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [FaceTarget] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [FaceTarget]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeFaceTarget.read(from: &buf))
         }
         return seq
     }
@@ -1929,7 +2474,13 @@ private let initializationResult: InitializationResult = {
     if (uniffi_culler_core_checksum_method_cullerengine_attach_models() != 65169) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_culler_core_checksum_method_cullerengine_cluster_bursts() != 16642) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_culler_core_checksum_method_cullerengine_cluster_near() != 45540) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_culler_core_checksum_method_cullerengine_clusters() != 15193) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_culler_core_checksum_method_cullerengine_dupes() != 58947) {
@@ -1941,10 +2492,16 @@ private let initializationResult: InitializationResult = {
     if (uniffi_culler_core_checksum_method_cullerengine_has_models() != 44842) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_culler_core_checksum_method_cullerengine_images_needing_faces() != 28359) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_culler_core_checksum_method_cullerengine_scan() != 11666) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_culler_core_checksum_method_cullerengine_search() != 2511) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_culler_core_checksum_method_cullerengine_store_face_facts() != 15733) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_culler_core_checksum_method_scanprogresslistener_on_progress() != 30572) {

@@ -77,6 +77,38 @@ pub struct LibraryItem {
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
+pub struct ClusterMember {
+    pub file_id: i64,
+    pub path: String,
+    pub thumb_path: Option<String>,
+    pub quality_score: Option<f64>,
+    pub content_hash_hex: String,
+    pub captured_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct ClusterDetail {
+    pub id: i64,
+    pub kind: String,
+    pub keeper_file_id: Option<i64>,
+    /// Filmstrip order: capture time ascending, then id.
+    pub members: Vec<ClusterMember>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FaceTarget {
+    pub file_id: i64,
+    pub thumb_path: String,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct FaceFacts {
+    pub file_id: i64,
+    pub face_count: u32,
+    pub eyes_open_ratio: f64,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
 pub struct SearchResult {
     pub file_id: i64,
     pub path: String,
@@ -178,6 +210,71 @@ impl CullerEngine {
                 files: c.files,
             })
             .collect())
+    }
+
+    /// Rebuilds burst clusters (PRD §8) and refreshes quality + keepers.
+    pub fn cluster_bursts(
+        &self,
+        max_gap_secs: i64,
+        min_cosine: f32,
+    ) -> Result<Vec<NearCluster>, ApiError> {
+        Ok(self
+            .lock()
+            .cluster_bursts(max_gap_secs, min_cosine)?
+            .into_iter()
+            .map(|c| NearCluster {
+                id: c.id,
+                files: c.files,
+            })
+            .collect())
+    }
+
+    /// Stored clusters with member metadata; `kind` filters (near/burst).
+    pub fn clusters(&self, kind: Option<String>) -> Result<Vec<ClusterDetail>, ApiError> {
+        Ok(self
+            .lock()
+            .clusters(kind.as_deref())?
+            .into_iter()
+            .map(|c| ClusterDetail {
+                id: c.id,
+                kind: c.kind,
+                keeper_file_id: c.keeper_file_id,
+                members: c
+                    .members
+                    .into_iter()
+                    .map(|m| ClusterMember {
+                        file_id: m.file_id,
+                        path: m.path,
+                        thumb_path: m.thumb_path,
+                        quality_score: m.quality_score,
+                        content_hash_hex: m.content_hash_hex,
+                        captured_at: m.captured_at,
+                    })
+                    .collect(),
+            })
+            .collect())
+    }
+
+    /// Analyzed images the Vision face pass hasn't visited yet.
+    pub fn images_needing_faces(&self) -> Result<Vec<FaceTarget>, ApiError> {
+        Ok(self
+            .lock()
+            .images_needing_faces()?
+            .into_iter()
+            .map(|(file_id, thumb_path)| FaceTarget {
+                file_id,
+                thumb_path,
+            })
+            .collect())
+    }
+
+    /// Stores Apple Vision face facts and refreshes quality + keepers.
+    pub fn store_face_facts(&self, facts: Vec<FaceFacts>) -> Result<(), ApiError> {
+        let rows: Vec<(i64, u32, f64)> = facts
+            .into_iter()
+            .map(|f| (f.file_id, f.face_count, f.eyes_open_ratio))
+            .collect();
+        Ok(self.lock().store_face_facts(&rows)?)
     }
 
     /// Loads the CLIP ONNX models so scans embed and `search` works.

@@ -4,6 +4,7 @@ struct ContentView: View {
     enum SidebarSection: Hashable {
         case library
         case duplicates
+        case clusters
     }
 
     @State private var store = EngineStore()
@@ -19,6 +20,9 @@ struct ContentView: View {
                 Label("Duplicates", systemImage: "doc.on.doc")
                     .badge(store.dupeGroups.count)
                     .tag(SidebarSection.duplicates)
+                Label("Bursts & Similar", systemImage: "square.stack.3d.down.right")
+                    .badge(store.clusterDetails.count)
+                    .tag(SidebarSection.clusters)
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200)
         } detail: {
@@ -42,6 +46,8 @@ struct ContentView: View {
                     }
             case .duplicates:
                 DuplicatesView(store: store)
+            case .clusters:
+                ClustersView(store: store)
             }
         }
         .navigationTitle("Culler")
@@ -71,6 +77,8 @@ struct ContentView: View {
         .task {
             store.open()
             await store.refresh()
+            await store.runFacePass()
+            await store.refreshClusters()
         }
         .alert(
             "Something went wrong",

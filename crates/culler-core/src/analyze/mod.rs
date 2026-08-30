@@ -4,6 +4,7 @@
 
 pub mod exif;
 pub mod phash;
+pub mod quality;
 pub mod thumbs;
 
 use std::path::Path;
@@ -19,6 +20,8 @@ pub struct ImageFacts {
     pub dhash: Option<u64>,
     pub phash: Option<u64>,
     pub thumb_path: Option<String>,
+    pub sharpness: Option<f64>,
+    pub exposure_score: Option<f64>,
 }
 
 /// Analyzes one file: EXIF (best effort), then pixel-derived facts if the
@@ -41,6 +44,8 @@ pub fn analyze_file(path: &Path, content_hash: &[u8; 32], thumbs_dir: &Path) -> 
             facts.height = Some(img.height());
             facts.dhash = Some(phash::dhash(&img));
             facts.phash = Some(phash::phash(&img));
+            facts.sharpness = Some(quality::sharpness(&img));
+            facts.exposure_score = Some(quality::exposure_score(&img));
             match thumbs::ensure_thumb(&img, content_hash, thumbs_dir) {
                 Ok(p) => facts.thumb_path = Some(p.to_string_lossy().into_owned()),
                 Err(_) => soft_error = true,

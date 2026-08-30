@@ -234,8 +234,8 @@ impl Db {
                 tx.prepare("UPDATE files SET status = 'analyzed' WHERE id = ?1")?;
             let mut upsert = tx.prepare(
                 "INSERT OR REPLACE INTO images (file_id, width, height, captured_at, \
-                 camera, orientation, dhash, phash, thumb_path) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                 camera, orientation, dhash, phash, thumb_path, sharpness, exposure_score) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             )?;
             for (id, new_hash, facts) in results {
                 match new_hash {
@@ -252,6 +252,8 @@ impl Db {
                     facts.dhash.map(|h| h as i64),
                     facts.phash.map(|h| h as i64),
                     facts.thumb_path,
+                    facts.sharpness,
+                    facts.exposure_score,
                 ])?;
             }
         }
@@ -282,9 +284,13 @@ impl Db {
             .map_err(Into::into)
     }
 
-    /// Replaces all `near` clusters with `components` (lists of file ids) and
-    /// returns them with member paths, preserving component order.
-    pub fn replace_near_clusters(&mut self, components: &[Vec<i64>]) -> Result<Vec<NearCluster>> {
+    /// Replaces all clusters of `kind` with `components` (lists of file ids)
+    /// and returns them with member paths, preserving component order.
+    pub fn replace_clusters(
+        &mut self,
+        kind: &str,
+        components: &[Vec<i64>],
+    ) -> Result<Vec<NearCluster>> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs() as i64);
@@ -293,17 +299,17 @@ impl Db {
         {
             tx.execute(
                 "DELETE FROM cluster_members WHERE cluster_id IN \
-                 (SELECT id FROM clusters WHERE kind = 'near')",
-                [],
+                 (SELECT id FROM clusters WHERE kind = ?1)",
+                [kind],
             )?;
-            tx.execute("DELETE FROM clusters WHERE kind = 'near'", [])?;
+            tx.execute("DELETE FROM clusters WHERE kind = ?1", [kind])?;
             let mut insert_cluster =
-                tx.prepare("INSERT INTO clusters (kind, created_at) VALUES ('near', ?1)")?;
+                tx.prepare("INSERT INTO clusters (kind, created_at) VALUES (?1, ?2)")?;
             let mut insert_member =
                 tx.prepare("INSERT INTO cluster_members (cluster_id, file_id) VALUES (?1, ?2)")?;
             let mut path_of = tx.prepare("SELECT path FROM files WHERE id = ?1")?;
             for component in components {
-                insert_cluster.execute([now])?;
+                insert_cluster.execute(params![kind, now])?;
                 let cluster_id = tx.last_insert_rowid();
                 let mut files = Vec::with_capacity(component.len());
                 for file_id in component {
@@ -377,6 +383,203 @@ impl Db {
                 .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                 .collect();
             out.push((id, vector));
+        }
+        Ok(out)
+    }
+
+    /// Writes aesthetic scores onto existing images rows.
+    pub fn store_aesthetics(&mut self, rows: &[(i64, f64)]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut stmt =
+                tx.prepare("UPDATE images SET aesthetic_score = ?2 WHERE file_id = ?1")?;
+            for (id, score) in rows {
+                stmt.execute(params![id, score])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Writes Apple Vision face facts onto existing images rows.
+    pub fn store_face_facts(&mut self, facts: &[(i64, u32, f64)]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "UPDATE images SET face_count = ?2, eyes_open_ratio = ?3 WHERE file_id = ?1",
+            )?;
+            for (id, count, ratio) in facts {
+                stmt.execute(params![id, count, ratio])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Analyzed live images that have no face facts yet but do have a
+    /// thumbnail the Swift Vision pass can read.
+    pub fn images_needing_faces(&self) -> Result<Vec<(i64, String)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.id, i.thumb_path FROM images i JOIN files f ON f.id = i.file_id \
+             WHERE f.status != 'missing' AND i.thumb_path IS NOT NULL \
+               AND i.face_count IS NULL ORDER BY f.id",
+        )?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Candidate frames for burst clustering: one representative per content
+    /// hash (like near clustering), with camera, capture time, embedding.
+    pub fn burst_frames(&self) -> Result<Vec<crate::cluster::burst::BurstFrame>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.id, i.camera, i.captured_at, e.vector \
+             FROM images i JOIN files f ON f.id = i.file_id \
+             LEFT JOIN embeddings e ON e.file_id = f.id \
+             WHERE f.status != 'missing' AND f.id = ( \
+                 SELECT MIN(f2.id) FROM files f2 \
+                 WHERE f2.content_hash = f.content_hash AND f2.status != 'missing') \
+             ORDER BY f.id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<i64>>(2)?,
+                row.get::<_, Option<Vec<u8>>>(3)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, camera, captured_at, blob) = row?;
+            let embedding = blob.map(|b| {
+                b.as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                    .collect()
+            });
+            out.push(crate::cluster::burst::BurstFrame {
+                id,
+                camera,
+                captured_at,
+                embedding,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Ids of every stored cluster.
+    pub fn cluster_ids(&self) -> Result<Vec<i64>> {
+        let mut stmt = self.conn.prepare("SELECT id FROM clusters ORDER BY id")?;
+        let rows = stmt.query_map([], |row| row.get(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Stored §7 signals for one cluster's members, in member id order.
+    pub fn cluster_member_signals(
+        &self,
+        cluster_id: i64,
+    ) -> Result<Vec<crate::cluster::scoring::MemberSignals>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.id, i.sharpness, i.exposure_score, i.aesthetic_score, \
+                    i.face_count, i.eyes_open_ratio, i.width, i.height \
+             FROM cluster_members cm \
+             JOIN files f ON f.id = cm.file_id \
+             LEFT JOIN images i ON i.file_id = f.id \
+             WHERE cm.cluster_id = ?1 ORDER BY f.id",
+        )?;
+        let rows = stmt.query_map([cluster_id], |row| {
+            let width: Option<i64> = row.get(6)?;
+            let height: Option<i64> = row.get(7)?;
+            Ok(crate::cluster::scoring::MemberSignals {
+                id: row.get(0)?,
+                sharpness: row.get(1)?,
+                exposure: row.get(2)?,
+                aesthetic: row.get(3)?,
+                face_count: row.get(4)?,
+                eyes_open_ratio: row.get(5)?,
+                pixels: width
+                    .zip(height)
+                    .map(|(w, h)| (w.max(0) as u64) * (h.max(0) as u64)),
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Writes composite quality scores and one cluster's keeper.
+    pub fn store_cluster_scores(
+        &mut self,
+        cluster_id: i64,
+        keeper_file_id: Option<i64>,
+        scores: &[(i64, f64)],
+    ) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut set_quality =
+                tx.prepare("UPDATE images SET quality_score = ?2 WHERE file_id = ?1")?;
+            for (id, score) in scores {
+                set_quality.execute(params![id, score])?;
+            }
+            tx.execute(
+                "UPDATE clusters SET keeper_file_id = ?2 WHERE id = ?1",
+                params![cluster_id, keeper_file_id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Stored clusters with member metadata, optionally filtered by kind.
+    /// Members in filmstrip order: capture time ascending (nulls last), id.
+    pub fn clusters_with_members(&self, kind: Option<&str>) -> Result<Vec<crate::ClusterDetail>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, kind, keeper_file_id FROM clusters \
+             WHERE ?1 IS NULL OR kind = ?1 ORDER BY id",
+        )?;
+        let headers = stmt
+            .query_map([kind], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+
+        let mut member_stmt = self.conn.prepare(
+            "SELECT f.id, f.path, i.thumb_path, i.quality_score, f.content_hash, i.captured_at \
+             FROM cluster_members cm \
+             JOIN files f ON f.id = cm.file_id \
+             LEFT JOIN images i ON i.file_id = f.id \
+             WHERE cm.cluster_id = ?1 \
+             ORDER BY i.captured_at IS NULL, i.captured_at, f.id",
+        )?;
+        let mut out = Vec::with_capacity(headers.len());
+        for (id, kind, keeper_file_id) in headers {
+            let members = member_stmt
+                .query_map([id], |row| {
+                    let hash: Option<Vec<u8>> = row.get(4)?;
+                    Ok(crate::ClusterMember {
+                        file_id: row.get(0)?,
+                        path: row.get(1)?,
+                        thumb_path: row.get(2)?,
+                        quality_score: row.get(3)?,
+                        content_hash_hex: hash
+                            .map(|h| h.iter().map(|b| format!("{b:02x}")).collect())
+                            .unwrap_or_default(),
+                        captured_at: row.get(5)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            out.push(crate::ClusterDetail {
+                id,
+                kind,
+                keeper_file_id,
+                members,
+            });
         }
         Ok(out)
     }

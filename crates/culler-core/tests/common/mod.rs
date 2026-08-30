@@ -105,13 +105,20 @@ pub struct ImagesRow {
     pub dhash: Option<i64>,
     pub phash: Option<i64>,
     pub thumb_path: Option<String>,
+    pub sharpness: Option<f64>,
+    pub exposure_score: Option<f64>,
+    pub face_count: Option<i64>,
+    pub eyes_open_ratio: Option<f64>,
+    pub aesthetic_score: Option<f64>,
+    pub quality_score: Option<f64>,
 }
 
 pub fn images_row(dir: &Path, path: &Path) -> Option<ImagesRow> {
     let conn = rusqlite::Connection::open(dir.join("culler.db")).unwrap();
     conn.query_row(
         "SELECT i.width, i.height, i.captured_at, i.camera, i.orientation, \
-                i.dhash, i.phash, i.thumb_path \
+                i.dhash, i.phash, i.thumb_path, i.sharpness, i.exposure_score, \
+                i.face_count, i.eyes_open_ratio, i.aesthetic_score, i.quality_score \
          FROM images i JOIN files f ON f.id = i.file_id WHERE f.path = ?1",
         [path.to_str().unwrap()],
         |row| {
@@ -124,6 +131,12 @@ pub fn images_row(dir: &Path, path: &Path) -> Option<ImagesRow> {
                 dhash: row.get(5)?,
                 phash: row.get(6)?,
                 thumb_path: row.get(7)?,
+                sharpness: row.get(8)?,
+                exposure_score: row.get(9)?,
+                face_count: row.get(10)?,
+                eyes_open_ratio: row.get(11)?,
+                aesthetic_score: row.get(12)?,
+                quality_score: row.get(13)?,
             })
         },
     )

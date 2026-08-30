@@ -14,8 +14,12 @@
 		3B64C38B8BCC020093651237 /* DuplicatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77098BB88C2C820FBD541B49 /* DuplicatesView.swift */; };
 		4112D93A8E83600EF62A42A7 /* CullerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45BCA2A5B901F27771D6B366 /* CullerApp.swift */; };
 		866E960E0EF1E81F7068D399 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0180C663F66841A779FFB9 /* ContentView.swift */; };
+		93190782606C38A41CF1B905 /* FaceScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF1F9F5BAAA5014FA871D8D3 /* FaceScanner.swift */; };
 		9F7E5D90B9E9AC31728F8533 /* LibraryGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 717F30A567D5EA3453068EB3 /* LibraryGridView.swift */; };
+		AABB99869E616C2E7C0A7D4B /* DecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB08D1B9734D146E309AF256 /* DecisionTests.swift */; };
 		B82BF0155E18E66104EABD22 /* DupeResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1707FF0D900A860F3DEFA79A /* DupeResolution.swift */; };
+		BE1087ABF2D42B54A6349AA0 /* Decision.swift in Sources */ = {isa = PBXBuildFile; fileRef = D023D0AA145623F6463EC756 /* Decision.swift */; };
+		E18F1B07F44354BD5D420255 /* ClustersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 981450A4A252C866B65FEEF1 /* ClustersView.swift */; };
 		F85C025A3C78825A337F7CD0 /* culler_core.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0E15AA5480E563C59015B8A /* culler_core.swift */; };
 /* End PBXBuildFile section */
 
@@ -36,8 +40,12 @@
 		717F30A567D5EA3453068EB3 /* LibraryGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryGridView.swift; sourceTree = "<group>"; };
 		77098BB88C2C820FBD541B49 /* DuplicatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicatesView.swift; sourceTree = "<group>"; };
 		829775A17C2EC7DAE6A0BB8E /* DupeResolutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DupeResolutionTests.swift; sourceTree = "<group>"; };
+		981450A4A252C866B65FEEF1 /* ClustersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClustersView.swift; sourceTree = "<group>"; };
 		9C273089E69F059EC8C21B31 /* Culler.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Culler.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB08D1B9734D146E309AF256 /* DecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionTests.swift; sourceTree = "<group>"; };
 		BC5BD0E6FC6BC0FF5B0B26E7 /* EngineSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineSmokeTests.swift; sourceTree = "<group>"; };
+		CF1F9F5BAAA5014FA871D8D3 /* FaceScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceScanner.swift; sourceTree = "<group>"; };
+		D023D0AA145623F6463EC756 /* Decision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Decision.swift; sourceTree = "<group>"; };
 		DA0180C663F66841A779FFB9 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		E0E15AA5480E563C59015B8A /* culler_core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = culler_core.swift; sourceTree = "<group>"; };
 		E2EE1AB00487B05115C8638B /* CullerCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = CullerCore.xcframework; path = ../CullerCore.xcframework; sourceTree = "<group>"; };
@@ -69,6 +77,7 @@
 		2660C11BB48201C2D380C67B /* CullerTests */ = {
 			isa = PBXGroup;
 			children = (
+				BB08D1B9734D146E309AF256 /* DecisionTests.swift */,
 				829775A17C2EC7DAE6A0BB8E /* DupeResolutionTests.swift */,
 				BC5BD0E6FC6BC0FF5B0B26E7 /* EngineSmokeTests.swift */,
 			);
@@ -99,6 +108,7 @@
 				E4677E708B687F14D4AE22A2 /* Engine */,
 				EE5F436B4A1529985E4F931F /* Models */,
 				B1C0A8C044A3BEC4E929F41D /* Views */,
+				AF54A5820F1CF7FE42D89E7A /* Vision */,
 			);
 			path = Culler;
 			sourceTree = "<group>";
@@ -119,9 +129,18 @@
 			path = Generated;
 			sourceTree = "<group>";
 		};
+		AF54A5820F1CF7FE42D89E7A /* Vision */ = {
+			isa = PBXGroup;
+			children = (
+				CF1F9F5BAAA5014FA871D8D3 /* FaceScanner.swift */,
+			);
+			path = Vision;
+			sourceTree = "<group>";
+		};
 		B1C0A8C044A3BEC4E929F41D /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				981450A4A252C866B65FEEF1 /* ClustersView.swift */,
 				DA0180C663F66841A779FFB9 /* ContentView.swift */,
 				77098BB88C2C820FBD541B49 /* DuplicatesView.swift */,
 				717F30A567D5EA3453068EB3 /* LibraryGridView.swift */,
@@ -141,6 +160,7 @@
 		EE5F436B4A1529985E4F931F /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				D023D0AA145623F6463EC756 /* Decision.swift */,
 				1707FF0D900A860F3DEFA79A /* DupeResolution.swift */,
 			);
 			path = Models;
@@ -227,6 +247,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AABB99869E616C2E7C0A7D4B /* DecisionTests.swift in Sources */,
 				242E324C189FC59FBB3B7DEE /* DupeResolutionTests.swift in Sources */,
 				140C23EE30C4504CB96A6090 /* EngineSmokeTests.swift in Sources */,
 			);
@@ -236,11 +257,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E18F1B07F44354BD5D420255 /* ClustersView.swift in Sources */,
 				866E960E0EF1E81F7068D399 /* ContentView.swift in Sources */,
 				4112D93A8E83600EF62A42A7 /* CullerApp.swift in Sources */,
+				BE1087ABF2D42B54A6349AA0 /* Decision.swift in Sources */,
 				B82BF0155E18E66104EABD22 /* DupeResolution.swift in Sources */,
 				3B64C38B8BCC020093651237 /* DuplicatesView.swift in Sources */,
 				2C14A39B2E504B215F3E118D /* EngineStore.swift in Sources */,
+				93190782606C38A41CF1B905 /* FaceScanner.swift in Sources */,
 				9F7E5D90B9E9AC31728F8533 /* LibraryGridView.swift in Sources */,
 				F85C025A3C78825A337F7CD0 /* culler_core.swift in Sources */,
 			);

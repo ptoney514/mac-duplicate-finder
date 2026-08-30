@@ -114,7 +114,9 @@ pub struct Engine {
     /// Vector index file, sibling of the database file.
     index_path: std::path::PathBuf,
     embedder: Option<Box<dyn embed::Embedder>>,
+    aesthetic: Option<embed::aesthetic::AestheticHead>,
     index: Option<index::VectorIndex>,
+    quality_weights: cluster::scoring::QualityWeights,
 }
 
 impl Engine {
@@ -126,7 +128,9 @@ impl Engine {
             thumbs_dir: parent.join("thumbs"),
             index_path: parent.join("culler.usearch"),
             embedder: None,
+            aesthetic: None,
             index: None,
+            quality_weights: cluster::scoring::QualityWeights::default(),
         })
     }
 
@@ -135,9 +139,14 @@ impl Engine {
         self.embedder = Some(embedder);
     }
 
-    /// Loads the ONNX CLIP models from `models_dir` and attaches them.
+    /// Loads the ONNX CLIP models (and the aesthetic head when installed)
+    /// from `models_dir` and attaches them.
     pub fn attach_models(&mut self, models_dir: &Path) -> Result<()> {
         self.attach_embedder(Box::new(embed::onnx::OnnxEmbedder::load(models_dir)?));
+        let aesthetic_path = models_dir.join(embed::aesthetic::AESTHETIC_FILE);
+        if aesthetic_path.exists() {
+            self.aesthetic = Some(embed::aesthetic::AestheticHead::load(&aesthetic_path)?);
+        }
         Ok(())
     }
 
@@ -358,6 +367,13 @@ impl Engine {
                         }
                     }
                     self.db.store_embeddings(&rows)?;
+                    if let Some(head) = &self.aesthetic {
+                        let aesthetics: Vec<(i64, f64)> = rows
+                            .iter()
+                            .map(|(id, vector)| (*id, f64::from(head.score(vector))))
+                            .collect();
+                        self.db.store_aesthetics(&aesthetics)?;
+                    }
                     let index = self.index.as_mut().expect("ensure_index sets it");
                     for (id, vector) in &rows {
                         index.add(*id as u64, vector)?;
@@ -388,13 +404,70 @@ impl Engine {
     pub fn cluster_near(&mut self, dhash_max: u32, phash_max: u32) -> Result<Vec<NearCluster>> {
         let hashes = self.db.perceptual_hashes()?;
         let components = cluster::near::near_components(&hashes, dhash_max, phash_max);
-        self.db.replace_near_clusters(&components)
+        let clusters = self.db.replace_clusters("near", &components)?;
+        self.rescore_clusters()?;
+        Ok(clusters)
     }
 
     /// Analyzed live images for the library grid, newest capture first
     /// (undated images last, path as tiebreak), paginated.
     pub fn grid_items(&self, offset: u64, limit: u64) -> Result<Vec<GridItem>> {
         self.db.grid_items(offset, limit)
+    }
+
+    /// Rebuilds burst clusters (PRD §8: same camera, captured within
+    /// `max_gap_secs` of the previous frame, embedding cosine >=
+    /// `min_cosine`), then re-scores quality and keepers.
+    pub fn cluster_bursts(
+        &mut self,
+        max_gap_secs: i64,
+        min_cosine: f32,
+    ) -> Result<Vec<NearCluster>> {
+        let frames = self.db.burst_frames()?;
+        let components = cluster::burst::burst_components(&frames, max_gap_secs, min_cosine);
+        let clusters = self.db.replace_clusters("burst", &components)?;
+        self.rescore_clusters()?;
+        Ok(clusters)
+    }
+
+    /// Stored clusters with member metadata, optionally filtered by kind.
+    pub fn clusters(&self, kind: Option<&str>) -> Result<Vec<ClusterDetail>> {
+        self.db.clusters_with_members(kind)
+    }
+
+    /// Stores Apple Vision face facts (count, eyes-open ratio) supplied by
+    /// the Swift shell (PRD §5.3), then refreshes quality and keepers.
+    pub fn store_face_facts(&mut self, facts: &[(i64, u32, f64)]) -> Result<()> {
+        self.db.store_face_facts(facts)?;
+        self.rescore_clusters()
+    }
+
+    /// Analyzed images the Swift Vision face pass hasn't visited yet.
+    pub fn images_needing_faces(&self) -> Result<Vec<(i64, String)>> {
+        self.db.images_needing_faces()
+    }
+
+    /// Recomputes §7 composite scores and keeper proposals for every stored
+    /// cluster, using the configured weights.
+    fn rescore_clusters(&mut self) -> Result<()> {
+        for cluster_id in self.db.cluster_ids()? {
+            let members = self.db.cluster_member_signals(cluster_id)?;
+            let scores = cluster::scoring::composite_scores(&members, &self.quality_weights);
+            let keeper = cluster::scoring::keeper_index(&members, &self.quality_weights)
+                .map(|i| members[i].id);
+            let pairs: Vec<(i64, f64)> = members
+                .iter()
+                .zip(&scores)
+                .map(|(m, s)| (m.id, *s))
+                .collect();
+            self.db.store_cluster_scores(cluster_id, keeper, &pairs)?;
+        }
+        Ok(())
+    }
+
+    /// Overrides the §7 scoring weights used by cluster passes.
+    pub fn set_quality_weights(&mut self, weights: cluster::scoring::QualityWeights) {
+        self.quality_weights = weights;
     }
 }
 
@@ -404,6 +477,27 @@ pub struct NearCluster {
     pub id: i64,
     /// Member paths, sorted.
     pub files: Vec<String>,
+}
+
+/// One member of a stored cluster, with what the review UIs need.
+#[derive(Debug, Clone)]
+pub struct ClusterMember {
+    pub file_id: i64,
+    pub path: String,
+    pub thumb_path: Option<String>,
+    pub quality_score: Option<f64>,
+    pub content_hash_hex: String,
+    pub captured_at: Option<i64>,
+}
+
+/// A stored cluster of any kind, members in filmstrip order (capture time
+/// ascending, then id).
+#[derive(Debug, Clone)]
+pub struct ClusterDetail {
+    pub id: i64,
+    pub kind: String,
+    pub keeper_file_id: Option<i64>,
+    pub members: Vec<ClusterMember>,
 }
 
 /// One cell of the library grid: an analyzed image and its cached thumbnail.

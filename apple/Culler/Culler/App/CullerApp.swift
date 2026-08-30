@@ -7,6 +7,6 @@ struct CullerApp: App {
         WindowGroup {
             ContentView()
         }
-        .modelContainer(for: DupeResolution.self)
+        .modelContainer(for: [DupeResolution.self, Decision.self])
     }
 }

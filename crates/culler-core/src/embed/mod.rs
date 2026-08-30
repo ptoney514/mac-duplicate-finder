@@ -2,6 +2,7 @@
 //! `Embedder` is a trait so the scan/search plumbing is testable without the
 //! ONNX models; `OnnxEmbedder` is the real implementation.
 
+pub mod aesthetic;
 pub mod onnx;
 pub mod preprocess;
 

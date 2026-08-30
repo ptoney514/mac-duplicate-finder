@@ -12,6 +12,8 @@ final class EngineStore {
     private(set) var lastSummary: ScanSummary?
     private(set) var dupeGroups: [DupeGroup] = []
     private(set) var libraryItems: [LibraryItem] = []
+    /// Burst + near clusters for the resolver, largest bursts first.
+    private(set) var clusterDetails: [ClusterDetail] = []
     /// True once the CLIP models are loaded; semantic search available.
     private(set) var modelsReady = false
     /// Non-nil while a search is active; nil shows the whole library.
@@ -84,6 +86,50 @@ final class EngineStore {
         searchResults = nil
     }
 
+    /// Vision face pass over images that lack face facts, then a cluster
+    /// rebuild so keepers reflect eyes-open shots. Safe to re-run; no-op
+    /// when everything is already covered.
+    func runFacePass() async {
+        guard let engine else { return }
+        do {
+            let targets = try await run { try engine.imagesNeedingFaces() }
+            guard !targets.isEmpty else { return }
+            let facts: [FaceFacts] = await Task.detached(priority: .utility) {
+                targets.compactMap { target in
+                    FaceScanner.analyze(thumbPath: target.thumbPath).map {
+                        FaceFacts(
+                            fileId: target.fileId,
+                            faceCount: UInt32($0.faceCount),
+                            eyesOpenRatio: $0.eyesOpenRatio
+                        )
+                    }
+                }
+            }.value
+            if !facts.isEmpty {
+                try await run { try engine.storeFaceFacts(facts: facts) }
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Rebuilds near + burst clusters with default thresholds and reloads
+    /// the resolver's list (bursts first, then near, big clusters first).
+    func refreshClusters() async {
+        guard let engine else { return }
+        do {
+            _ = try await run { try engine.clusterNear(dhashMax: 8, phashMax: 10) }
+            _ = try await run { try engine.clusterBursts(maxGapSecs: 3, minCosine: 0.92) }
+            let all = try await run { try engine.clusters(kind: nil) }
+            clusterDetails = all.sorted {
+                ($0.kind == "burst" ? 0 : 1, -$0.members.count, $0.id)
+                    < ($1.kind == "burst" ? 0 : 1, -$1.members.count, $1.id)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func refresh() async {
         guard let engine else { return }
         do {
@@ -110,6 +156,8 @@ final class EngineStore {
         do {
             lastSummary = try await run { try engine.scan(root: root, listener: relay) }
             await refresh()
+            await runFacePass()
+            await refreshClusters()
         } catch {
             errorMessage = error.localizedDescription
         }

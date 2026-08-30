@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
+use culler_core::cluster::burst::{DEFAULT_BURST_GAP_SECS, DEFAULT_BURST_MIN_COSINE};
 use culler_core::cluster::near::{DEFAULT_DHASH_MAX, DEFAULT_PHASH_MAX};
 use culler_core::{DupeGroup, Engine, ScanProgress};
 
@@ -15,8 +16,9 @@ commands:
   scan <path>       walk a folder, record file facts, hash, analyze, and
                     (when models are installed) embed images
   dupes             list exact-duplicate groups, largest reclaimable first
-  clusters          rebuild and list near-duplicate clusters
-                      [--kind near] [--dhash <max>] [--phash <max>]
+  clusters          rebuild and list near or burst clusters
+                      [--kind near|burst] [--dhash <n>] [--phash <n>]
+                      [--gap <secs>] [--cos <min>]
   search \"<text>\"   semantic search (needs scripts/fetch-models.sh once)
                       [--limit <n>]
 
@@ -60,7 +62,7 @@ fn main() -> ExitCode {
         Some("dupes") if args.len() == 1 => cmd_dupes(&db_path),
         Some("dupes") => return usage_error("dupes takes no arguments"),
         Some("clusters") => match parse_cluster_args(&args[1..]) {
-            Ok((dhash_max, phash_max)) => cmd_clusters(&db_path, dhash_max, phash_max),
+            Ok(run) => cmd_clusters(&db_path, run),
             Err(msg) => return usage_error(&msg),
         },
         Some("-h" | "--help") => {
@@ -193,66 +195,115 @@ fn cmd_scan(db_path: &Path, models_dir: &Path, root: &str) -> Result<(), culler_
     Ok(())
 }
 
-/// `clusters [--kind near] [--dhash <max>] [--phash <max>]`
-fn parse_cluster_args(args: &[String]) -> Result<(u32, u32), String> {
+/// `clusters [--kind near|burst] [--dhash <max>] [--phash <max>]
+///           [--gap <secs>] [--cos <min>]`
+enum ClusterRun {
+    Near { dhash_max: u32, phash_max: u32 },
+    Burst { gap_secs: i64, min_cosine: f32 },
+}
+
+fn parse_cluster_args(args: &[String]) -> Result<ClusterRun, String> {
     let (mut dhash_max, mut phash_max) = (DEFAULT_DHASH_MAX, DEFAULT_PHASH_MAX);
+    let (mut gap_secs, mut min_cosine) = (DEFAULT_BURST_GAP_SECS, DEFAULT_BURST_MIN_COSINE);
+    let mut kind = "near".to_owned();
     let mut it = args.iter();
     while let Some(flag) = it.next() {
-        let mut value = |name: &str| {
+        let mut raw = |name: &str| {
             it.next()
+                .cloned()
                 .ok_or_else(|| format!("{name} needs a value"))
-                .and_then(|v| {
-                    v.parse::<u32>()
-                        .map_err(|_| format!("{name}: not a number: {v}"))
-                })
         };
         match flag.as_str() {
-            "--kind" => match it.next().map(String::as_str) {
-                Some("near") => {}
-                Some(other) => {
-                    return Err(format!(
-                        "unsupported cluster kind: {other} (only 'near' exists; \
-                         burst arrives with embeddings in milestone 5)"
-                    ))
+            "--kind" => {
+                kind = raw("--kind")?;
+                if kind != "near" && kind != "burst" {
+                    return Err(format!("unsupported cluster kind: {kind} (near or burst)"));
                 }
-                None => return Err("--kind needs a value".to_owned()),
-            },
-            "--dhash" => dhash_max = value("--dhash")?,
-            "--phash" => phash_max = value("--phash")?,
+            }
+            "--dhash" => {
+                dhash_max = raw("--dhash")?
+                    .parse()
+                    .map_err(|_| "--dhash: not a number".to_owned())?
+            }
+            "--phash" => {
+                phash_max = raw("--phash")?
+                    .parse()
+                    .map_err(|_| "--phash: not a number".to_owned())?
+            }
+            "--gap" => {
+                gap_secs = raw("--gap")?
+                    .parse()
+                    .map_err(|_| "--gap: not a number".to_owned())?
+            }
+            "--cos" => {
+                min_cosine = raw("--cos")?
+                    .parse()
+                    .map_err(|_| "--cos: not a number".to_owned())?
+            }
             other => return Err(format!("unknown clusters flag: {other}")),
         }
     }
     if dhash_max > 64 || phash_max > 64 {
         return Err("hash distances are at most 64".to_owned());
     }
-    Ok((dhash_max, phash_max))
+    Ok(if kind == "burst" {
+        ClusterRun::Burst {
+            gap_secs,
+            min_cosine,
+        }
+    } else {
+        ClusterRun::Near {
+            dhash_max,
+            phash_max,
+        }
+    })
 }
 
-fn cmd_clusters(
-    db_path: &Path,
-    dhash_max: u32,
-    phash_max: u32,
-) -> Result<(), culler_core::CoreError> {
+fn cmd_clusters(db_path: &Path, run: ClusterRun) -> Result<(), culler_core::CoreError> {
     let mut engine = Engine::open(db_path)?;
-    let clusters = engine.cluster_near(dhash_max, phash_max)?;
+    let (kind, description) = match run {
+        ClusterRun::Near {
+            dhash_max,
+            phash_max,
+        } => {
+            engine.cluster_near(dhash_max, phash_max)?;
+            ("near", format!("dhash ≤ {dhash_max}, phash ≤ {phash_max}"))
+        }
+        ClusterRun::Burst {
+            gap_secs,
+            min_cosine,
+        } => {
+            engine.cluster_bursts(gap_secs, min_cosine)?;
+            ("burst", format!("gap ≤ {gap_secs}s, cosine ≥ {min_cosine}"))
+        }
+    };
 
+    let clusters = engine.clusters(Some(kind))?;
     if clusters.is_empty() {
-        println!("no near-duplicate clusters (dhash ≤ {dhash_max}, phash ≤ {phash_max})");
+        println!("no {kind} clusters ({description})");
         return Ok(());
     }
 
-    let members: usize = clusters.iter().map(|c| c.files.len()).sum();
+    let members: usize = clusters.iter().map(|c| c.members.len()).sum();
     println!(
-        "{} near-duplicate cluster{} covering {} images (dhash ≤ {dhash_max}, phash ≤ {phash_max})",
+        "{} {kind} cluster{} covering {} images ({description})",
         clusters.len(),
         plural(clusters.len()),
         members
     );
     for cluster in &clusters {
         println!();
-        println!("cluster {}: {} images", cluster.id, cluster.files.len());
-        for file in &cluster.files {
-            println!("  {file}");
+        println!("cluster {}: {} images", cluster.id, cluster.members.len());
+        for member in &cluster.members {
+            let star = if Some(member.file_id) == cluster.keeper_file_id {
+                "★"
+            } else {
+                " "
+            };
+            let quality = member
+                .quality_score
+                .map_or("  -  ".to_owned(), |q| format!("{q:.3}"));
+            println!("  {star} {quality}  {}", member.path);
         }
     }
     Ok(())
