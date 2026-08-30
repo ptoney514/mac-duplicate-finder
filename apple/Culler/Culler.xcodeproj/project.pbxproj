@@ -12,10 +12,15 @@
 		0FF35C6EF24879A2487CF41C /* StagingManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A69533BD626EC3524E1A73F /* StagingManagerTests.swift */; };
 		140C23EE30C4504CB96A6090 /* EngineSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC5BD0E6FC6BC0FF5B0B26E7 /* EngineSmokeTests.swift */; };
 		242E324C189FC59FBB3B7DEE /* DupeResolutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 829775A17C2EC7DAE6A0BB8E /* DupeResolutionTests.swift */; };
+		251EA5E738F3AB317F5529C3 /* FrontierVerdict.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95DE07105DE62F1335E45362 /* FrontierVerdict.swift */; };
 		2C14A39B2E504B215F3E118D /* EngineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30483E5EE51550EC5630305 /* EngineStore.swift */; };
 		3B64C38B8BCC020093651237 /* DuplicatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77098BB88C2C820FBD541B49 /* DuplicatesView.swift */; };
 		4112D93A8E83600EF62A42A7 /* CullerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45BCA2A5B901F27771D6B366 /* CullerApp.swift */; };
+		437FF1FF8AA40B1A5DB46DEE /* FrontierClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD6027DA7A9B8556F7C9F7FB /* FrontierClientTests.swift */; };
+		5A7D2F868248ECCC04D2B3A4 /* FrontierClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC9FB037F6804DB84308F87C /* FrontierClient.swift */; };
+		73226746F6A2FDB1E400255C /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A6B46513A9627AEA1D1737B /* KeychainStore.swift */; };
 		866E960E0EF1E81F7068D399 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0180C663F66841A779FFB9 /* ContentView.swift */; };
+		89AAD1C766978331F62F09F8 /* FrontierSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DFADFBCB9894EC1ABF9B07 /* FrontierSettingsView.swift */; };
 		93190782606C38A41CF1B905 /* FaceScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF1F9F5BAAA5014FA871D8D3 /* FaceScanner.swift */; };
 		93F5F2FD0A09DFA1059A50C1 /* StagingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA3A78EF08A3A080FDFCFD0C /* StagingManager.swift */; };
 		9F7E5D90B9E9AC31728F8533 /* LibraryGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 717F30A567D5EA3453068EB3 /* LibraryGridView.swift */; };
@@ -42,13 +47,16 @@
 		0937630D75206DDB7CE22C92 /* CommitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommitView.swift; sourceTree = "<group>"; };
 		0A69533BD626EC3524E1A73F /* StagingManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingManagerTests.swift; sourceTree = "<group>"; };
 		1707FF0D900A860F3DEFA79A /* DupeResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DupeResolution.swift; sourceTree = "<group>"; };
+		2A6B46513A9627AEA1D1737B /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		45BCA2A5B901F27771D6B366 /* CullerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CullerApp.swift; sourceTree = "<group>"; };
 		4FA7D66A87FB4825958DA481 /* CullerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CullerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		717F30A567D5EA3453068EB3 /* LibraryGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryGridView.swift; sourceTree = "<group>"; };
 		77098BB88C2C820FBD541B49 /* DuplicatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DuplicatesView.swift; sourceTree = "<group>"; };
 		829775A17C2EC7DAE6A0BB8E /* DupeResolutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DupeResolutionTests.swift; sourceTree = "<group>"; };
+		95DE07105DE62F1335E45362 /* FrontierVerdict.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontierVerdict.swift; sourceTree = "<group>"; };
 		981450A4A252C866B65FEEF1 /* ClustersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClustersView.swift; sourceTree = "<group>"; };
 		9C273089E69F059EC8C21B31 /* Culler.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Culler.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B7DFADFBCB9894EC1ABF9B07 /* FrontierSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontierSettingsView.swift; sourceTree = "<group>"; };
 		BB08D1B9734D146E309AF256 /* DecisionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecisionTests.swift; sourceTree = "<group>"; };
 		BC5BD0E6FC6BC0FF5B0B26E7 /* EngineSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineSmokeTests.swift; sourceTree = "<group>"; };
 		BC9B7F7ACCF0F5C9ECA08ED4 /* TriageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriageView.swift; sourceTree = "<group>"; };
@@ -56,6 +64,8 @@
 		CF1F9F5BAAA5014FA871D8D3 /* FaceScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceScanner.swift; sourceTree = "<group>"; };
 		D023D0AA145623F6463EC756 /* Decision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Decision.swift; sourceTree = "<group>"; };
 		DA0180C663F66841A779FFB9 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		DC9FB037F6804DB84308F87C /* FrontierClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontierClient.swift; sourceTree = "<group>"; };
+		DD6027DA7A9B8556F7C9F7FB /* FrontierClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontierClientTests.swift; sourceTree = "<group>"; };
 		E0E15AA5480E563C59015B8A /* culler_core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = culler_core.swift; sourceTree = "<group>"; };
 		E2EE1AB00487B05115C8638B /* CullerCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = CullerCore.xcframework; path = ../CullerCore.xcframework; sourceTree = "<group>"; };
 		E30483E5EE51550EC5630305 /* EngineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineStore.swift; sourceTree = "<group>"; };
@@ -90,6 +100,7 @@
 				BB08D1B9734D146E309AF256 /* DecisionTests.swift */,
 				829775A17C2EC7DAE6A0BB8E /* DupeResolutionTests.swift */,
 				BC5BD0E6FC6BC0FF5B0B26E7 /* EngineSmokeTests.swift */,
+				DD6027DA7A9B8556F7C9F7FB /* FrontierClientTests.swift */,
 				0A69533BD626EC3524E1A73F /* StagingManagerTests.swift */,
 			);
 			path = CullerTests;
@@ -117,11 +128,21 @@
 			children = (
 				7BB7E13D4BB04F6B00AA794C /* App */,
 				E4677E708B687F14D4AE22A2 /* Engine */,
+				A67680963043E73B718F329B /* Frontier */,
 				EE5F436B4A1529985E4F931F /* Models */,
 				B1C0A8C044A3BEC4E929F41D /* Views */,
 				AF54A5820F1CF7FE42D89E7A /* Vision */,
 			);
 			path = Culler;
+			sourceTree = "<group>";
+		};
+		A67680963043E73B718F329B /* Frontier */ = {
+			isa = PBXGroup;
+			children = (
+				DC9FB037F6804DB84308F87C /* FrontierClient.swift */,
+				2A6B46513A9627AEA1D1737B /* KeychainStore.swift */,
+			);
+			path = Frontier;
 			sourceTree = "<group>";
 		};
 		A730CA9ABCEB39FD8A693231 /* Frameworks */ = {
@@ -156,6 +177,7 @@
 				0937630D75206DDB7CE22C92 /* CommitView.swift */,
 				DA0180C663F66841A779FFB9 /* ContentView.swift */,
 				77098BB88C2C820FBD541B49 /* DuplicatesView.swift */,
+				B7DFADFBCB9894EC1ABF9B07 /* FrontierSettingsView.swift */,
 				717F30A567D5EA3453068EB3 /* LibraryGridView.swift */,
 				BC9B7F7ACCF0F5C9ECA08ED4 /* TriageView.swift */,
 			);
@@ -177,6 +199,7 @@
 			children = (
 				D023D0AA145623F6463EC756 /* Decision.swift */,
 				1707FF0D900A860F3DEFA79A /* DupeResolution.swift */,
+				95DE07105DE62F1335E45362 /* FrontierVerdict.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -265,6 +288,7 @@
 				AABB99869E616C2E7C0A7D4B /* DecisionTests.swift in Sources */,
 				242E324C189FC59FBB3B7DEE /* DupeResolutionTests.swift in Sources */,
 				140C23EE30C4504CB96A6090 /* EngineSmokeTests.swift in Sources */,
+				437FF1FF8AA40B1A5DB46DEE /* FrontierClientTests.swift in Sources */,
 				0FF35C6EF24879A2487CF41C /* StagingManagerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -283,6 +307,10 @@
 				3B64C38B8BCC020093651237 /* DuplicatesView.swift in Sources */,
 				2C14A39B2E504B215F3E118D /* EngineStore.swift in Sources */,
 				93190782606C38A41CF1B905 /* FaceScanner.swift in Sources */,
+				5A7D2F868248ECCC04D2B3A4 /* FrontierClient.swift in Sources */,
+				89AAD1C766978331F62F09F8 /* FrontierSettingsView.swift in Sources */,
+				251EA5E738F3AB317F5529C3 /* FrontierVerdict.swift in Sources */,
+				73226746F6A2FDB1E400255C /* KeychainStore.swift in Sources */,
 				9F7E5D90B9E9AC31728F8533 /* LibraryGridView.swift in Sources */,
 				93F5F2FD0A09DFA1059A50C1 /* StagingManager.swift in Sources */,
 				F1B77A9E151F07E0041CBB17 /* TriageView.swift in Sources */,

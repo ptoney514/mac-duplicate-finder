@@ -7,6 +7,9 @@ struct CullerApp: App {
         WindowGroup {
             ContentView()
         }
-        .modelContainer(for: [DupeResolution.self, Decision.self])
+        .modelContainer(for: [DupeResolution.self, Decision.self, FrontierVerdict.self])
+        Settings {
+            FrontierSettingsView()
+        }
     }
 }

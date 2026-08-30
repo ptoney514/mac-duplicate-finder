@@ -1,3 +1,4 @@
+import CryptoKit
 import SwiftData
 import SwiftUI
 
@@ -10,10 +11,13 @@ struct ClustersView: View {
     @Environment(\.modelContext) private var context
     @Query private var decisions: [Decision]
 
+    @Query private var verdicts: [FrontierVerdict]
     @State private var selectedClusterID: Int64?
     @State private var selectedMember = 0
     @State private var keeperOverrides: [Int64: Int64] = [:]
     @State private var showCompare = false
+    @State private var askingAI = false
+    @State private var aiError: String?
 
     var body: some View {
         Group {
@@ -139,6 +143,7 @@ struct ClustersView: View {
                 .padding(.horizontal)
             }
             .frame(height: 96)
+            frontierRow(for: cluster)
             Text("←/→ move · ⏎ accept keeper · K set keeper · R reject others · M maybe · Space compare")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -186,6 +191,84 @@ struct ClustersView: View {
     /// The engine's proposal unless the user overrode it with K.
     private func keeper(of cluster: ClusterDetail) -> Int64? {
         keeperOverrides[cluster.id] ?? cluster.keeperFileId
+    }
+
+    /// Frontier tiebreak (§9.3 "Ask Claude", here any OpenAI-compatible
+    /// model per ADR-0006). Cached verdicts render inline; the button only
+    /// appears once an API key is configured in Settings.
+    @ViewBuilder
+    private func frontierRow(for cluster: ClusterDetail) -> some View {
+        let hash = Self.clusterHash(cluster)
+        HStack(spacing: 8) {
+            if let verdict = verdicts.first(where: { $0.clusterHashHex == hash }) {
+                Label("\(verdict.model): \(verdict.reason)", systemImage: "sparkles")
+                    .font(.caption)
+                    .lineLimit(2)
+                if let pick = cluster.members.first(where: {
+                    $0.contentHashHex == verdict.keeperHashHex
+                }) {
+                    Button("Use AI Keeper") {
+                        keeperOverrides[cluster.id] = pick.fileId
+                    }
+                    .controlSize(.small)
+                }
+            } else if FrontierConfig.current() != nil {
+                Button {
+                    Task { await askAI(cluster, hash: hash) }
+                } label: {
+                    Label(askingAI ? "Asking…" : "Ask AI", systemImage: "sparkles")
+                }
+                .controlSize(.small)
+                .disabled(askingAI)
+            }
+            if let aiError {
+                Text(aiError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    /// Stable identity for a cluster's content, independent of cluster ids.
+    static func clusterHash(_ cluster: ClusterDetail) -> String {
+        let joined = cluster.members.map(\.contentHashHex).sorted().joined()
+        return SHA256.hash(data: Data(joined.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    private func askAI(_ cluster: ClusterDetail, hash: String) async {
+        guard let config = FrontierConfig.current() else { return }
+        askingAI = true
+        aiError = nil
+        defer { askingAI = false }
+
+        let top = Array(
+            cluster.members
+                .sorted { ($0.qualityScore ?? 0) > ($1.qualityScore ?? 0) }
+                .prefix(4)
+        )
+        let candidates = top.map {
+            FrontierClient.Candidate(
+                label: ($0.path as NSString).lastPathComponent,
+                qualityScore: $0.qualityScore,
+                thumbPath: $0.thumbPath
+            )
+        }
+        do {
+            let pick = try await FrontierClient.askKeeper(config: config, candidates: candidates)
+            context.insert(
+                FrontierVerdict(
+                    clusterHashHex: hash,
+                    model: config.model,
+                    keeperHashHex: top[pick.keeperIndex].contentHashHex,
+                    reason: pick.reason
+                )
+            )
+        } catch {
+            aiError = error.localizedDescription
+        }
     }
 
     private func topTwo(of cluster: ClusterDetail) -> [ClusterMember] {
