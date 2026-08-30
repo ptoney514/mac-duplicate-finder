@@ -321,6 +321,30 @@ impl Db {
         Ok(out)
     }
 
+    /// Analyzed live images, newest capture first (NULL `captured_at` last,
+    /// path as tiebreak), paginated for the library grid.
+    pub fn grid_items(&self, offset: u64, limit: u64) -> Result<Vec<crate::GridItem>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.id, f.path, i.thumb_path, i.captured_at, i.width, i.height \
+             FROM images i JOIN files f ON f.id = i.file_id \
+             WHERE f.status != 'missing' \
+             ORDER BY i.captured_at IS NULL, i.captured_at DESC, f.path \
+             LIMIT ?1 OFFSET ?2",
+        )?;
+        let rows = stmt.query_map(params![limit as i64, offset as i64], |row| {
+            Ok(crate::GridItem {
+                file_id: row.get(0)?,
+                path: row.get(1)?,
+                thumb_path: row.get(2)?,
+                captured_at: row.get(3)?,
+                width: row.get::<_, Option<i64>>(4)?.map(|w| w as u32),
+                height: row.get::<_, Option<i64>>(5)?.map(|h| h as u32),
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
     /// Exact-duplicate groups among live hashed files, sorted by reclaimable
     /// bytes descending. Members are sorted keeper-first (oldest mtime, then
     /// shortest path, then path).

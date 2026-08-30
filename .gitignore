@@ -1,4 +1,7 @@
 /target
+/apple/CullerCore.xcframework
+xcuserdata/
+DerivedData/
 /models/*
 !/models/.gitkeep
 *.db

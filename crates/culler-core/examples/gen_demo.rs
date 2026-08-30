@@ -19,7 +19,11 @@ fn shot(w: u32, h: u32, direction: u8) -> DynamicImage {
         };
         let v = (t * 255.0) as u8;
         let (dx, dy) = (fx - 0.5, fy - 0.5);
-        let disc = if (dx * dx + dy * dy).sqrt() < 0.25 { 60u8 } else { 0 };
+        let disc = if (dx * dx + dy * dy).sqrt() < 0.25 {
+            60u8
+        } else {
+            0
+        };
         image::Rgb([v.saturating_add(disc), v, 255 - v])
     });
     DynamicImage::ImageRgb8(img)
@@ -53,7 +57,11 @@ fn main() {
 
     // Exact duplicates: byte-for-byte copies.
     std::fs::create_dir_all(dir.join("backup/vacation")).unwrap();
-    std::fs::copy(dir.join("vacation/beach.jpg"), dir.join("backup/vacation/beach.jpg")).unwrap();
+    std::fs::copy(
+        dir.join("vacation/beach.jpg"),
+        dir.join("backup/vacation/beach.jpg"),
+    )
+    .unwrap();
     std::fs::copy(dir.join("sunset.jpg"), dir.join("backup/sunset.jpg")).unwrap();
 
     println!("demo library written to {}", dir.display());

@@ -1,0 +1,45 @@
+# XcodeGen spec (ADR-0003). Regenerate Culler.xcodeproj with:
+#   cd apple/Culler && xcodegen generate
+# The generated project is committed so plain Xcode works without xcodegen.
+name: Culler
+options:
+  bundleIdPrefix: dev.pernell
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: NO
+targets:
+  Culler:
+    type: application
+    platform: macOS
+    sources:
+      - path: Culler
+    dependencies:
+      - framework: ../CullerCore.xcframework
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.pernell.culler
+        PRODUCT_NAME: Culler
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.photography
+        INFOPLIST_KEY_NSMainStoryboardFile: ""
+        COMBINE_HIDPI_IMAGES: YES
+  CullerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: CullerTests
+    dependencies:
+      - target: Culler
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Culler.app/Contents/MacOS/Culler"
+        BUNDLE_LOADER: "$(TEST_HOST)"

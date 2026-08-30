@@ -9,6 +9,8 @@ pub mod api;
 pub mod cluster;
 pub mod scan;
 
+uniffi::setup_scaffolding!();
+
 mod db;
 mod embed;
 mod index;
@@ -252,6 +254,12 @@ impl Engine {
         let components = cluster::near::near_components(&hashes, dhash_max, phash_max);
         self.db.replace_near_clusters(&components)
     }
+
+    /// Analyzed live images for the library grid, newest capture first
+    /// (undated images last, path as tiebreak), paginated.
+    pub fn grid_items(&self, offset: u64, limit: u64) -> Result<Vec<GridItem>> {
+        self.db.grid_items(offset, limit)
+    }
 }
 
 /// A stored cluster of near-duplicate images.
@@ -260,4 +268,15 @@ pub struct NearCluster {
     pub id: i64,
     /// Member paths, sorted.
     pub files: Vec<String>,
+}
+
+/// One cell of the library grid: an analyzed image and its cached thumbnail.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GridItem {
+    pub file_id: i64,
+    pub path: String,
+    pub thumb_path: Option<String>,
+    pub captured_at: Option<i64>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
