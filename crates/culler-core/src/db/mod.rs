@@ -1,0 +1,374 @@
+//! SQLite persistence, WAL mode. This database is the source of truth for
+//! file facts (section 6 of the PRD).
+
+pub mod migrations;
+
+use std::collections::HashSet;
+use std::path::Path;
+
+use rusqlite::{params, Connection, OptionalExtension};
+
+use crate::analyze::ImageFacts;
+use crate::cluster::near::HashedImage;
+use crate::{CoreError, DupeFile, DupeGroup, FoundFile, NearCluster, Result};
+
+pub struct Db {
+    conn: Connection,
+}
+
+/// Outcome of recording one walk of a root.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct RecordStats {
+    pub added: u64,
+    pub updated: u64,
+    pub unchanged: u64,
+    pub missing: u64,
+}
+
+/// A file that shares its size with at least one other live file, making it
+/// an exact-duplicate candidate.
+#[derive(Debug, Clone)]
+pub struct CandidateFile {
+    pub id: i64,
+    pub path: String,
+    pub already_hashed: bool,
+}
+
+/// A live file with no `images` row yet.
+#[derive(Debug, Clone)]
+pub struct AnalysisTarget {
+    pub id: i64,
+    pub path: String,
+    pub content_hash: Option<[u8; 32]>,
+}
+
+impl Db {
+    /// Opens (creating if needed) the database, enables WAL, runs migrations.
+    pub fn open(path: &Path) -> Result<Self> {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent).map_err(|source| CoreError::Io {
+                    path: parent.display().to_string(),
+                    source,
+                })?;
+            }
+        }
+        let conn = Connection::open(path)?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        migrations::run(&conn)?;
+        Ok(Self { conn })
+    }
+
+    /// Incrementally records one walk of `root`:
+    /// - new paths are inserted as `pending`;
+    /// - rows whose size and mtime are unchanged are left alone;
+    /// - changed rows get the new size/mtime, a cleared hash, and `pending`;
+    /// - rows under `root` not in `found` are marked `missing`;
+    /// - previously-missing rows that reappeared unchanged get their old
+    ///   status back (`hashed` if a hash is stored, else `pending`).
+    pub fn record_found(&mut self, root: &str, found: &[FoundFile]) -> Result<RecordStats> {
+        let tx = self.conn.transaction()?;
+        let mut stats = RecordStats::default();
+        {
+            let mut select =
+                tx.prepare("SELECT id, size, mtime, status FROM files WHERE path = ?1")?;
+            let mut insert = tx.prepare(
+                "INSERT INTO files (path, size, mtime, status) VALUES (?1, ?2, ?3, 'pending')",
+            )?;
+            let mut update = tx.prepare(
+                "UPDATE files SET size = ?2, mtime = ?3, content_hash = NULL, \
+                 status = 'pending' WHERE path = ?1",
+            )?;
+            let mut revive = tx.prepare(
+                "UPDATE files SET status = CASE WHEN content_hash IS NULL \
+                 THEN 'pending' ELSE 'hashed' END WHERE path = ?1",
+            )?;
+            // Changed content invalidates every derived fact.
+            let mut drop_embedding = tx.prepare("DELETE FROM embeddings WHERE file_id = ?1")?;
+            let mut drop_image = tx.prepare("DELETE FROM images WHERE file_id = ?1")?;
+            for f in found {
+                let existing = select
+                    .query_row(params![f.path], |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, i64>(2)?,
+                            row.get::<_, String>(3)?,
+                        ))
+                    })
+                    .optional()?;
+                match existing {
+                    None => {
+                        insert.execute(params![f.path, f.size as i64, f.mtime])?;
+                        stats.added += 1;
+                    }
+                    Some((_, size, mtime, status)) if size == f.size as i64 && mtime == f.mtime => {
+                        if status == "missing" {
+                            revive.execute(params![f.path])?;
+                            stats.updated += 1;
+                        } else {
+                            stats.unchanged += 1;
+                        }
+                    }
+                    Some((id, _, _, _)) => {
+                        update.execute(params![f.path, f.size as i64, f.mtime])?;
+                        drop_embedding.execute([id])?;
+                        drop_image.execute([id])?;
+                        stats.updated += 1;
+                    }
+                }
+            }
+        }
+
+        // Mark rows under this root that the walk no longer saw.
+        let prefix = if root.ends_with('/') {
+            root.to_owned()
+        } else {
+            format!("{root}/")
+        };
+        let found_paths: HashSet<&str> = found.iter().map(|f| f.path.as_str()).collect();
+        let mut newly_missing = Vec::new();
+        {
+            let mut stmt = tx.prepare("SELECT id, path FROM files WHERE status != 'missing'")?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (id, path) = row?;
+                if path.starts_with(&prefix) && !found_paths.contains(path.as_str()) {
+                    newly_missing.push(id);
+                }
+            }
+        }
+        {
+            let mut mark = tx.prepare("UPDATE files SET status = 'missing' WHERE id = ?1")?;
+            for id in &newly_missing {
+                mark.execute([id])?;
+            }
+        }
+        stats.missing = newly_missing.len() as u64;
+        tx.commit()?;
+        Ok(stats)
+    }
+
+    /// Groups of live (non-missing) files sharing a size, for sizes with at
+    /// least two files. Size-first candidate grouping for hashing.
+    pub fn size_candidates(&self) -> Result<Vec<(u64, Vec<CandidateFile>)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT size, id, path, content_hash IS NOT NULL FROM files \
+             WHERE status != 'missing' AND size IN ( \
+                 SELECT size FROM files WHERE status != 'missing' \
+                 GROUP BY size HAVING COUNT(*) >= 2) \
+             ORDER BY size",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)? as u64,
+                CandidateFile {
+                    id: row.get(1)?,
+                    path: row.get(2)?,
+                    already_hashed: row.get(3)?,
+                },
+            ))
+        })?;
+        let mut groups: Vec<(u64, Vec<CandidateFile>)> = Vec::new();
+        for row in rows {
+            let (size, file) = row?;
+            match groups.last_mut() {
+                Some((s, members)) if *s == size => members.push(file),
+                _ => groups.push((size, vec![file])),
+            }
+        }
+        Ok(groups)
+    }
+
+    /// Stores content hashes and marks the rows `hashed`.
+    pub fn store_hashes(&mut self, hashes: &[(i64, [u8; 32])]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut stmt =
+                tx.prepare("UPDATE files SET content_hash = ?2, status = 'hashed' WHERE id = ?1")?;
+            for (id, hash) in hashes {
+                stmt.execute(params![id, &hash[..]])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Live files that have no `images` row yet (never analyzed, or their
+    /// content changed and the stale row was dropped).
+    pub fn files_needing_analysis(&self) -> Result<Vec<AnalysisTarget>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.id, f.path, f.content_hash FROM files f \
+             LEFT JOIN images i ON i.file_id = f.id \
+             WHERE f.status != 'missing' AND i.file_id IS NULL \
+             ORDER BY f.id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(AnalysisTarget {
+                id: row.get(0)?,
+                path: row.get(1)?,
+                content_hash: row
+                    .get::<_, Option<Vec<u8>>>(2)?
+                    .map(|blob| blob.try_into().expect("content_hash is 32 bytes")),
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Writes analysis results: the content hash for files first hashed
+    /// during analysis, the `images` row, and status `analyzed`.
+    pub fn store_analysis(
+        &mut self,
+        results: &[(i64, Option<[u8; 32]>, ImageFacts)],
+    ) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut set_hash = tx
+                .prepare("UPDATE files SET content_hash = ?2, status = 'analyzed' WHERE id = ?1")?;
+            let mut set_status =
+                tx.prepare("UPDATE files SET status = 'analyzed' WHERE id = ?1")?;
+            let mut upsert = tx.prepare(
+                "INSERT OR REPLACE INTO images (file_id, width, height, captured_at, \
+                 camera, orientation, dhash, phash, thumb_path) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            )?;
+            for (id, new_hash, facts) in results {
+                match new_hash {
+                    Some(hash) => set_hash.execute(params![id, &hash[..]])?,
+                    None => set_status.execute([id])?,
+                };
+                upsert.execute(params![
+                    id,
+                    facts.width,
+                    facts.height,
+                    facts.captured_at,
+                    facts.camera,
+                    facts.orientation,
+                    facts.dhash.map(|h| h as i64),
+                    facts.phash.map(|h| h as i64),
+                    facts.thumb_path,
+                ])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Perceptual hashes of live analyzed images, one representative per
+    /// content hash (smallest file id): exact duplicates belong to the dupes
+    /// flow, not near clusters.
+    pub fn perceptual_hashes(&self) -> Result<Vec<HashedImage>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT i.file_id, i.dhash, i.phash FROM images i \
+             JOIN files f ON f.id = i.file_id \
+             WHERE f.status != 'missing' AND f.id = ( \
+                 SELECT MIN(f2.id) FROM files f2 \
+                 WHERE f2.content_hash = f.content_hash AND f2.status != 'missing') \
+             ORDER BY i.file_id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(HashedImage {
+                id: row.get(0)?,
+                dhash: row.get::<_, Option<i64>>(1)?.map(|h| h as u64),
+                phash: row.get::<_, Option<i64>>(2)?.map(|h| h as u64),
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    /// Replaces all `near` clusters with `components` (lists of file ids) and
+    /// returns them with member paths, preserving component order.
+    pub fn replace_near_clusters(&mut self, components: &[Vec<i64>]) -> Result<Vec<NearCluster>> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        let tx = self.conn.transaction()?;
+        let mut out = Vec::with_capacity(components.len());
+        {
+            tx.execute(
+                "DELETE FROM cluster_members WHERE cluster_id IN \
+                 (SELECT id FROM clusters WHERE kind = 'near')",
+                [],
+            )?;
+            tx.execute("DELETE FROM clusters WHERE kind = 'near'", [])?;
+            let mut insert_cluster =
+                tx.prepare("INSERT INTO clusters (kind, created_at) VALUES ('near', ?1)")?;
+            let mut insert_member =
+                tx.prepare("INSERT INTO cluster_members (cluster_id, file_id) VALUES (?1, ?2)")?;
+            let mut path_of = tx.prepare("SELECT path FROM files WHERE id = ?1")?;
+            for component in components {
+                insert_cluster.execute([now])?;
+                let cluster_id = tx.last_insert_rowid();
+                let mut files = Vec::with_capacity(component.len());
+                for file_id in component {
+                    insert_member.execute(params![cluster_id, file_id])?;
+                    files.push(path_of.query_row([file_id], |row| row.get::<_, String>(0))?);
+                }
+                files.sort();
+                out.push(NearCluster {
+                    id: cluster_id,
+                    files,
+                });
+            }
+        }
+        tx.commit()?;
+        Ok(out)
+    }
+
+    /// Exact-duplicate groups among live hashed files, sorted by reclaimable
+    /// bytes descending. Members are sorted keeper-first (oldest mtime, then
+    /// shortest path, then path).
+    pub fn dupe_groups(&self) -> Result<Vec<DupeGroup>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT content_hash, size, path, mtime FROM files \
+             WHERE status != 'missing' AND content_hash IS NOT NULL \
+             ORDER BY content_hash",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, Vec<u8>>(0)?,
+                row.get::<_, i64>(1)? as u64,
+                DupeFile {
+                    path: row.get(2)?,
+                    mtime: row.get(3)?,
+                },
+            ))
+        })?;
+
+        let mut groups: Vec<DupeGroup> = Vec::new();
+        for row in rows {
+            let (hash_blob, size, file) = row?;
+            let hash: [u8; 32] = hash_blob
+                .try_into()
+                .expect("content_hash is always 32 bytes");
+            match groups.last_mut() {
+                Some(g) if g.hash == hash => g.files.push(file),
+                _ => groups.push(DupeGroup {
+                    hash,
+                    size,
+                    files: vec![file],
+                    reclaimable: 0,
+                }),
+            }
+        }
+        groups.retain(|g| g.files.len() >= 2);
+        for g in &mut groups {
+            g.files.sort_by(|a, b| {
+                (a.mtime, a.path.len(), &a.path).cmp(&(b.mtime, b.path.len(), &b.path))
+            });
+            g.reclaimable = g.size * (g.files.len() as u64 - 1);
+        }
+        groups.sort_by(|a, b| {
+            b.reclaimable
+                .cmp(&a.reclaimable)
+                .then_with(|| a.files[0].path.cmp(&b.files[0].path))
+        });
+        Ok(groups)
+    }
+}

@@ -1,0 +1,7 @@
+/target
+/models/*
+!/models/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+.DS_Store

@@ -1,0 +1,5 @@
+# UniFFI configuration. The Swift bindings are generated in milestone 3;
+# until then culler-core is consumed directly by culler-cli as a Rust crate.
+#
+# [bindings.swift]
+# module_name = "CullerCore"
